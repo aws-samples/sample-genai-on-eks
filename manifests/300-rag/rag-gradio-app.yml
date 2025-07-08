@@ -11,7 +11,7 @@ data:
     import pandas as pd
 
     # Configure API endpoint
-    API_BASE_URL = "http://rag-mistral-serve-svc:8000"
+    API_BASE_URL = "http://rag-service-serve-svc:8000"
 
     # Fixed parameters
     TOP_K = 3

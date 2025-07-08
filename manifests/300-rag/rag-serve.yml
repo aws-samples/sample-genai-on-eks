@@ -78,7 +78,7 @@ data:
                 print(f"Error retrieving context: {str(e)}")
                 return "No relevant context found due to an error."
         
-        def _create_chat_request(self, content: str) -> Dict[str, Any]:
+        def _create_chat_request(self, content):
             """Create a chat request for the LLM service"""
             return {
                 "model": self.model,
