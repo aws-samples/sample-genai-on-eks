@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-serve-script
+data:
+  rag_serve.py: |
+    import os
+    import time
+    from sentence_transformers import SentenceTransformer
+    from qdrant_client import QdrantClient
+    from ray import serve
+    import aiohttp
+    
+    # Configuration parameters
+    COLLECTION_NAME = "knowledge_base"
+    RAG_PROMPT_TEMPLATE = """
+    You are an AI assistant designed to help users with questions. You have been provided with relevant context extracted from documents.
+    
+    Context information:
+    {context}
+    
+    Based on the above context, please answer the following question in detail:
+    {query}
+    
+    If the context doesn't contain information to answer the question directly, please say so and provide a general response.
+    """
+    
+    @serve.deployment(
+        name="rag-service-deployment",
+        autoscaling_config={
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "target_num_ongoing_requests_per_replica": 5,
+        },
+        ray_actor_options={"num_cpus": 1, "num_gpus": 1},
+    )
+    
+    class RAGMistralDeployment:
+        def __init__(self, model, model_endpoint):
+            self.model = model
+            self.model_endpoint = model_endpoint
+            
+            # Initialize the embedding model
+            print("Initializing the embedding model...")
+            self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            # Initialize the Qdrant client
+            print("Connecting to Qdrant...")
+            self.qdrant_client = QdrantClient(host="qdrant", port=6333)
+            
+            # Initialize aiohttp session for making requests to the LLM service
+            self.session = aiohttp.ClientSession()
+
+            print("RAG Service initialization complete!")
+    
+        async def retrieve_context(self, query: str, top_k: int = 3) -> str:
+            """Retrieve relevant context from the vector database"""
+            try:
+                # Generate embedding for the query
+                query_embedding = self.embed_model.encode(query)
+                
+                # Search for similar vectors in Qdrant
+                search_result = self.qdrant_client.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=query_embedding.tolist(),
+                    limit=top_k,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                
+                # Extract and format the context
+                contexts = []
+                for hit in search_result:
+                    contexts.append(f"[Source: {hit.payload.get('source', 'unknown')}]\n{hit.payload.get('text', '')}")
+    
+                return "\n\n".join(contexts)
+            except Exception as e:
+                print(f"Error retrieving context: {str(e)}")
+                return "No relevant context found due to an error."
+        
+        def _create_chat_request(self, content: str) -> Dict[str, Any]:
+            """Create a chat request for the LLM service"""
+            return {
+                "model": self.model,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.7,
+                "max_tokens": 1024
+            }
+
+        async def __call__(self, request):
+            """Process incoming requests with improved request handling"""
+            start_time = time.time()
+    
+            # Handle different request types
+            try:
+                # Starlette/FastAPI Request handling
+                if hasattr(request, "json") and callable(getattr(request, "json", None)):
+                    # This is a Starlette/FastAPI Request object
+                    req_data = await request.json()
+                else:
+                    # This is likely already a dictionary or other object
+                    req_data = request
+    
+                # Extract query and parameters
+                query = None
+                use_rag = True
+    
+                # Extract query - check in req_data and at top level
+                if isinstance(req_data, dict):
+                    # First try direct query parameter
+                    query = req_data.get("query", "")
+    
+                    # Try "prompt" parameter as an alternative
+                    if not query:
+                        query = req_data.get("prompt", "")
+    
+                    # Check for messages format
+                    if not query and "messages" in req_data:
+                        messages = req_data.get("messages", [])
+                        last_user_message = next((msg["content"] for msg in reversed(messages) 
+                                                if msg.get("role") == "user"), None)
+                        if last_user_message:
+                            query = last_user_message
+    
+                    use_rag = req_data.get("use_rag", True)  # Default to using RAG
+                else:
+                    return {"error": "Invalid request format"}
+                if not query:
+                    return {"error": "No query provided"}
+            except Exception as e:
+                return {"error": f"Request processing error: {str(e)}"}
+                      
+           
+            
+            # Process with or without RAG
+            if use_rag:
+                # Retrieve relevant context
+                context = await self.retrieve_context(query)
+                # Create the RAG-enhanced prompt
+                rag_prompt = RAG_PROMPT_TEMPLATE.format(context=context, query=query)
+                chat_request = self._create_chat_request(rag_prompt)
+
+                # Make request to VLLM deployment
+                async with self.session.post(
+                    self.model_endpoint,
+                    json=chat_request
+                ) as response:
+                    result = await response.json()
+                    generated_text = result['choices'][0]['message']['content']
+                            
+                response = {
+                    "generated_text": generated_text,
+                    "query": query,
+                    "context_used": context,
+                    "rag_enabled": True,
+                    "processing_time": time.time() - start_time
+                }
+            else:
+                
+                # Standard LLM completion without RAG
+                chat_request = self._create_chat_request(query)
+                async with self.session.post(
+                    self.model_endpoint,
+                    json=chat_request
+                ) as response:
+                    result = await response.json()
+                    generated_text = result['choices'][0]['message']['content']
+                
+                response = {
+                    "generated_text": generated_text,
+                    "query": query,
+                    "rag_enabled": False,
+                    "processing_time": time.time() - start_time
+                }
+            return response
+        
+        async def shutdown(self):
+            await self.session.close()
+
+    # Create the deployment
+    deployment = RAGMistralDeployment.bind(
+        model=os.environ.get('MODEL_ID', '/models/mistral-7b-v0-3'),
+        model_endpoint=os.environ.get('MODEL_ENDPOINT', 'http://vllm-serve-svc:8000/v1/chat/completions')
+    )
