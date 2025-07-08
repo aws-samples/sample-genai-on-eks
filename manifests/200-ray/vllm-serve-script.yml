@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-serve-script
+data:
+  vllm_serve.py: |
+    import os
+    from typing import Optional
+    from fastapi import FastAPI
+    from starlette.requests import Request
+    from starlette.responses import StreamingResponse, JSONResponse
+    from ray import serve
+    from vllm.engine.arg_utils import AsyncEngineArgs
+    from vllm.engine.async_llm_engine import AsyncLLMEngine
+    from vllm.entrypoints.openai.protocol import (
+        ChatCompletionRequest,
+        ChatCompletionResponse,
+        ErrorResponse,
+    )
+    from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+    from vllm.entrypoints.openai.serving_models import OpenAIServingModels, BaseModelPath
+    from vllm.config import ModelConfig
+    from vllm.logger import init_logger
+
+    logger = init_logger(__name__)
+    app = FastAPI()
+
+    @serve.deployment(
+        name="mistral-deployment",
+        ray_actor_options={"num_gpus": 1},
+        health_check_period_s=10
+    )
+    @serve.ingress(app)
+    class VLLMDeployment:
+        def __init__(
+            self,
+            model: str,
+            tensor_parallel_size: int,
+            max_num_seqs: int,
+            max_model_len: int,
+            response_role: str = "assistant",
+            chat_template: Optional[str] = None,
+        ):
+            logger.info("VLLMDeployment is initializing...")
+            self.model_path = model
+            self.max_model_len = max_model_len
+
+            # Create ModelConfig
+            self.model_config = ModelConfig(
+                model=model,
+                task="generate",
+                tokenizer=model,
+                tokenizer_mode="auto",
+                trust_remote_code=True,
+                dtype="bfloat16",
+                seed=42,
+                max_model_len=max_model_len,
+            )
+
+            # Initialize VLLM Engine
+            engine_args = AsyncEngineArgs(
+                model=model,
+                tokenizer_mode="mistral",
+                tensor_parallel_size=tensor_parallel_size,
+                max_num_seqs=max_num_seqs,
+                max_model_len=max_model_len,
+                disable_log_requests=True,
+                device="cuda",
+                dtype="bfloat16",
+                trust_remote_code=True,
+                gpu_memory_utilization=0.9,
+                enable_chunked_prefill=True
+            )
+            logger.info(f"Engine Args Initialized: {engine_args}")
+
+            try:
+                self.engine = AsyncLLMEngine.from_engine_args(engine_args)
+                logger.info("VLLM Engine initialized successfully")
+            except Exception as e:
+                logger.error(f"Error initializing VLLM engine: {str(e)}")
+                raise
+
+            self.response_role = response_role
+            self.chat_template = chat_template
+            self.openai_serving_chat = None
+
+            # Initialize OpenAIServingModels with model_config
+            self.models = OpenAIServingModels(
+                engine_client=None,
+                model_config=self.model_config,
+                base_model_paths=[BaseModelPath(name=model, model_path=model)]
+            )
+
+        async def health_check(self):
+            """Health check for Ray Serve deployment"""
+            logger.info("Health check passed for VLLMDeployment.")
+            return "OK"
+
+        @app.get("/v1/models")
+        async def get_models(self):
+            """List available models in OpenAI format."""
+            return JSONResponse(
+                content={
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": self.model_path,
+                            "object": "model",
+                            "owned_by": "organization",
+                            "permission": [],
+                        }
+                    ],
+                }
+            )
+
+        @app.post("/v1/chat/completions")
+        async def create_chat_completion(
+            self, request: ChatCompletionRequest, raw_request: Request
+        ):
+            """Handle chat requests with OpenAI-compatible response format."""
+            if not self.openai_serving_chat:
+                logger.info("Initializing OpenAIServingChat instance...")
+
+                self.openai_serving_chat = OpenAIServingChat(
+                    engine_client=self.engine,
+                    model_config=self.model_config,
+                    models=self.models,
+                    response_role=self.response_role,
+                    request_logger=None,
+                    chat_template=self.chat_template,
+                    chat_template_content_format="default",
+                    return_tokens_as_token_ids=False,
+                    enable_auto_tools=False,
+                    tool_parser=None,
+                    enable_prompt_tokens_details=False,
+                )
+                logger.info("OpenAIServingChat initialized successfully")
+
+            logger.info(f"Received request: {request}")
+            generator = await self.openai_serving_chat.create_chat_completion(request, raw_request)
+
+            if isinstance(generator, ErrorResponse):
+                return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+
+            if request.stream:
+                return StreamingResponse(content=generator, media_type="text/event-stream")
+            else:
+                assert isinstance(generator, ChatCompletionResponse)
+                return JSONResponse(content=generator.model_dump())
+
+    deployment = VLLMDeployment.bind(
+        model=os.environ.get('MODEL_ID', '/models/mistral-7b-v0-3'),
+        tensor_parallel_size=int(os.environ.get('TENSOR_PARALLEL_SIZE', '1')),
+        max_num_seqs=int(os.environ.get('MAX_NUM_SEQS', '32')),
+        max_model_len=int(os.environ.get('MAX_MODEL_LEN', '8192')),
+    )

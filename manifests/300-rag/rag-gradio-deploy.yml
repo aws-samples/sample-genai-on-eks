@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-gradio-interface
+  labels:
+    app: rag-gradio-interface
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-gradio-interface
+  template:
+    metadata:
+      labels:
+        app: rag-gradio-interface
+    spec:
+      containers:
+      - name: gradio-app
+        image: python:3.11-slim
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/bash
+        - -c
+        - |
+          apt-get update && apt-get install -y curl
+          pip install requests==2.31.0 pandas==2.0.3
+          pip install gradio==3.50.2
+          pip list | grep gradio
+          python /app/rag-gradio-app.py
+        ports:
+        - containerPort: 7860
+        env:
+        - name: RAG_SERVICE_HOST
+          value: "rag-mistral-serve-svc"
+        - name: RAG_SERVICE_PORT
+          value: "8000"
+        volumeMounts:
+        - name: app-volume
+          mountPath: /app/rag-gradio-app.py
+          subPath: rag-gradio-app.py
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+      volumes:
+      - name: app-volume
+        configMap:
+          name: rag-gradio-app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-gradio-interface
+  labels:
+    app: rag-gradio-interface
+spec:
+  selector:
+    app: rag-gradio-interface
+  ports:
+  - port: 80
+    targetPort: 7860
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-gradio-alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '10'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '9'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '10'
+    alb.ingress.kubernetes.io/success-codes: '200-302,307,404'
+    alb.ingress.kubernetes.io/load-balancer-name: rag-gradio-alb
+    alb.ingress.kubernetes.io/inbound-cidrs: 0.0.0.0/0
+  labels:
+    app: rag-gradio-alb
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rag-gradio-interface
+            port:
+              number: 80

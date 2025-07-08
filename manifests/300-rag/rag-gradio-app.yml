@@ -1,0 +1,265 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-gradio-app
+data:
+  rag-gradio-app.py: |
+    import gradio as gr
+    import requests
+    import json
+    import time
+    import pandas as pd
+
+    # Configure API endpoint
+    API_BASE_URL = "http://rag-mistral-serve-svc:8000"
+
+    # Fixed parameters
+    TOP_K = 3
+    MAX_TOKENS = 512
+    TEMPERATURE = 0.7
+
+    # Sample queries list
+    SAMPLE_QUERIES = [
+        "Compare the battery life and performance of high-end laptops",
+        "What features should I look for in smart lighting products?",
+        "Which smart home devices have the best voice recognition?",
+        "Tell me about privacy features in smart home technology",
+        "What electronics offer the best value for creative professionals?",
+        "How do smart bulbs handle power outages?",
+        "What makes a display good for photo editing?",
+        "Compare cooling systems in high-performance laptops"
+    ]
+
+
+    def make_api_request(query, use_rag=True, temperature=0.7, max_tokens=512):
+        """Make a request to the RAG service API"""
+        url = f"{API_BASE_URL}/"
+
+        # Create payload
+        payload = {
+            "query": query,
+            "use_rag": use_rag,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        try:
+            response = requests.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps(payload),
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "error": f"API Error: {response.status_code}",
+                    "details": response.text
+                }
+        except Exception as e:
+            return {"error": f"Request Error: {str(e)}"}
+
+
+    def query_all_endpoints(query, temperature, max_tokens):
+        """Query the service with and without RAG and return results"""
+        # Get the start time
+        start_time = time.time()
+
+        # Make requests with and without RAG
+        rag_results = make_api_request(query, use_rag=True, temperature=temperature, max_tokens=max_tokens)
+        standard_results = make_api_request(query, use_rag=False, temperature=temperature, max_tokens=max_tokens)
+
+        # Calculate elapsed time
+        elapsed_time = time.time() - start_time
+
+        # Standard LLM output
+        standard_html = "<h3>LLM Response (No RAG)</h3>"
+        if "error" in standard_results:
+            standard_html += f"<p>Error: {standard_results['error']}</p>"
+        else:
+            answer = standard_results.get('generated_text', 'No answer provided.')
+            processing_time = standard_results.get('processing_time', 0)
+            standard_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;'>"
+            standard_html += f"<p>{answer}</p>"
+            standard_html += f"<br><small><i>Processing time: {processing_time:.2f}s</i></small>"
+            standard_html += "</div>"
+
+        # RAG output
+        rag_html = "<h3>RAG-Enhanced Response</h3>"
+        if "error" in rag_results:
+            rag_html += f"<p>Error: {rag_results['error']}</p>"
+        else:
+            answer = rag_results.get('generated_text', 'No answer provided.')
+            processing_time = rag_results.get('processing_time', 0)
+            rag_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;'>"
+            rag_html += f"<p>{answer}</p>"
+            rag_html += f"<br><small><i>Processing time: {processing_time:.2f}s</i></small>"
+            rag_html += "</div>"
+
+        # Context data for RAG tab
+        context_html = "<h3>Retrieved Context</h3>"
+        if "error" in rag_results:
+            context_html += f"<p>Error: {rag_results['error']}</p>"
+        else:
+            context = rag_results.get('context_used', 'No context available.')
+            context_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f5f5f5; font-family: monospace; white-space: pre-wrap;'>"
+            context_html += f"{context}"
+            context_html += "</div>"
+
+        # Create dataframes for the tabs
+        rag_df = None
+        if "error" not in rag_results:
+            rag_df = pd.DataFrame([{
+                "Query": query,
+                "Response": rag_results.get('generated_text', 'No answer provided.'),
+                "Processing Time": f"{rag_results.get('processing_time', 0):.2f}s"
+            }])
+
+        standard_df = None
+        if "error" not in standard_results:
+            standard_df = pd.DataFrame([{
+                "Query": query,
+                "Response": standard_results.get('generated_text', 'No answer provided.'),
+                "Processing Time": f"{standard_results.get('processing_time', 0):.2f}s"
+            }])
+
+        status_msg = f"Query completed in {elapsed_time:.2f} seconds"
+
+        return (
+            gr.HTML(standard_html),
+            gr.HTML(rag_html),
+            gr.HTML(context_html),
+            standard_df,
+            rag_df,
+            gr.Markdown(status_msg)
+        )
+
+
+    def load_sample_query(query):
+        """Load a sample query into the input box"""
+        return query
+
+
+    # Custom CSS for better styling
+    custom_css = """
+    .sample-query-btn {
+        font-family: 'Roboto', sans-serif;
+        font-weight: 600;
+        font-size: 14px;
+        background-color: #f0f2f6;
+        border: 1px solid #d9e1eb;
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin: 4px;
+        transition: background-color 0.3s, transform 0.2s;
+    }
+    .sample-query-btn:hover {
+        background-color: #e0e4ea;
+        transform: translateY(-2px);
+    }
+    .results-container {
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 15px;
+        margin-top: 10px;
+        background-color: #f9f9f9;
+    }
+    .section-header {
+        font-size: 20px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 5px;
+    }
+    """
+
+    # Create the Gradio interface
+    with gr.Blocks(title="RAG Comparison", theme=gr.themes.Soft(), css=custom_css) as demo:
+        gr.Markdown("# RAG Comparison Tool")
+        gr.Markdown("Compare standard LLM responses with RAG-enhanced responses side by side.")
+
+        with gr.Row():
+            with gr.Column():
+                query_input = gr.Textbox(
+                    label="Enter your query",
+                    placeholder="Ask a question to compare standard and RAG-enhanced responses...",
+                    lines=2
+                )
+
+                with gr.Row():
+                    temperature = gr.Slider(
+                        label="Temperature",
+                        minimum=0.1,
+                        maximum=1.0,
+                        value=0.7,
+                        step=0.1,
+                        info="Higher values make output more creative but less factual"
+                    )
+                    max_tokens = gr.Slider(
+                        label="Max Tokens",
+                        minimum=64,
+                        maximum=1024,
+                        value=512,
+                        step=64,
+                        info="Maximum number of tokens to generate"
+                    )
+
+                submit_btn = gr.Button("Submit Query", variant="primary")
+                status = gr.Markdown("Ready to query")
+
+        gr.Markdown("### Sample Queries")
+        with gr.Row():
+            sample_buttons = [gr.Button(query, elem_classes=["sample-query-btn"]) for query in SAMPLE_QUERIES[:4]]
+
+        with gr.Row():
+            sample_buttons_row2 = [gr.Button(query, elem_classes=["sample-query-btn"]) for query in SAMPLE_QUERIES[4:]]
+
+        with gr.Tabs():
+            with gr.TabItem("Side-by-Side Comparison"):
+                with gr.Row():
+                    standard_html = gr.HTML("<h3>Standard LLM Response</h3><p>Submit a query to see results...</p>")
+                    rag_html = gr.HTML("<h3>RAG-Enhanced Response</h3><p>Submit a query to see results...</p>")
+
+                with gr.Row():
+                    context_html = gr.HTML("<h3>Retrieved Context</h3><p>Submit a query to see results...</p>")
+
+            with gr.TabItem("Standard LLM Response"):
+                standard_table = gr.DataFrame(
+                    headers=["Query", "Response", "Processing Time"],
+                    label="Standard LLM Response"
+                )
+
+            with gr.TabItem("RAG Response"):
+                rag_table = gr.DataFrame(
+                    headers=["Query", "Response", "Processing Time"],
+                    label="RAG-Enhanced Response"
+                )
+
+        # Set up button click events
+        submit_btn.click(
+            query_all_endpoints,
+            inputs=[query_input, temperature, max_tokens],
+            outputs=[
+                standard_html,
+                rag_html,
+                context_html,
+                standard_table,
+                rag_table,
+                status
+            ]
+        )
+
+        # Set up sample query buttons
+        for btn in sample_buttons + sample_buttons_row2:
+            btn.click(
+                load_sample_query,
+                inputs=[btn],
+                outputs=[query_input]
+            )
+
+    # Launch the app
+    if __name__ == "__main__":
+        demo.launch(server_name="0.0.0.0", server_port=7860)
