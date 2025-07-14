@@ -3,7 +3,7 @@
 In this workshop, learn how to get started with Large Language Model (LLM) applications and inference on Amazon EKS. Discover how to deploy and manage LLM workloads. Through hands-on labs, you'll explore how to leverage Amazon EKS along with AWS services and open-source tools to create robust LLM solutions. 
 
 #### Target audience
-This workshop is intended mainly for Machine Learning Scientists/Engineers, Data Scientists/Engineers, Prompt Engineers, Developers, and technical Founders.
+This workshop is intended mainly for Machine Learning Scientists/Engineers, Data Scientists/Engineers, Prompt Engineers, Developers, and Technical Founders.
 
 #### Prerequisites
 This is an advanced (400-level) workshop. While not mandatory, participants will benefit from:
