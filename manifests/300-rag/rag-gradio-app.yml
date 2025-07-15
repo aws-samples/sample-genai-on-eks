@@ -81,7 +81,7 @@ data:
         else:
             answer = standard_results.get('generated_text', 'No answer provided.')
             processing_time = standard_results.get('processing_time', 0)
-            standard_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;'>"
+            standard_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #2c3e50; color: white;'>"
             standard_html += f"<p>{answer}</p>"
             standard_html += f"<br><small><i>Processing time: {processing_time:.2f}s</i></small>"
             standard_html += "</div>"
@@ -93,7 +93,7 @@ data:
         else:
             answer = rag_results.get('generated_text', 'No answer provided.')
             processing_time = rag_results.get('processing_time', 0)
-            rag_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;'>"
+            rag_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #2c3e50; color: white;'>"
             rag_html += f"<p>{answer}</p>"
             rag_html += f"<br><small><i>Processing time: {processing_time:.2f}s</i></small>"
             rag_html += "</div>"
@@ -104,7 +104,7 @@ data:
             context_html += f"<p>Error: {rag_results['error']}</p>"
         else:
             context = rag_results.get('context_used', 'No context available.')
-            context_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f5f5f5; font-family: monospace; white-space: pre-wrap;'>"
+            context_html += f"<div style='padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #2c3e50; color: white; font-family: monospace; white-space: pre-wrap;'>"
             context_html += f"{context}"
             context_html += "</div>"
 
