@@ -12,11 +12,14 @@ spec:
         import_path: "rag_serve:deployment"
         route_prefix: "/"
         runtime_env:
-          pip: ["sentence-transformers", "qdrant-client"]
+          pip: ["sentence-transformers", "boto3>=1.34.0"]
           env_vars:
             LD_LIBRARY_PATH: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
             MODEL_ID: "/models/mistral-7b-v0-3"
             MODEL_ENDPOINT: "http://vllm-serve-svc:8000/v1/chat/completions"
+            S3_VECTOR_BUCKET_NAME: "${S3_VECTOR_BUCKET_NAME}"
+            S3_VECTOR_INDEX_NAME: "${S3_VECTOR_INDEX_NAME}"
+            AWS_REGION: "${AWS_REGION}"
         deployments:
           - name: rag-service-deployment
             autoscaling_config:
@@ -45,6 +48,7 @@ spec:
         num-cpus: "0"
       template:
         spec:
+          serviceAccountName: s3-access-sa
           containers:
           - name: ray-head
             image: public.ecr.aws/aws-containers/aiml/ray-2.43.0-py311-vllm0.7.3:latest
@@ -84,6 +88,12 @@ spec:
               value: "/home/ray/python"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            - name: S3_VECTOR_BUCKET_NAME
+              value: "${S3_VECTOR_BUCKET_NAME}"
+            - name: S3_VECTOR_INDEX_NAME
+              value: "${S3_VECTOR_INDEX_NAME}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
           nodeSelector:
             node.kubernetes.io/instance-type: m5.xlarge
           volumes:
@@ -103,6 +113,7 @@ spec:
       rayStartParams: {}
       template:
         spec:
+          serviceAccountName: s3-access-sa
           containers:
           - name: ray-worker
             image: public.ecr.aws/aws-containers/aiml/ray-2.43.0-py311-vllm0.7.3:latest
@@ -131,6 +142,12 @@ spec:
               value: "/home/ray/python"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            - name: S3_VECTOR_BUCKET_NAME
+              value: "${S3_VECTOR_BUCKET_NAME}"
+            - name: S3_VECTOR_INDEX_NAME
+              value: "${S3_VECTOR_INDEX_NAME}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
           volumes:
           - name: ray-logs
             emptyDir: {}

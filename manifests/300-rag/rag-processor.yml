@@ -7,158 +7,146 @@ data:
     import os
     import json
     import boto3
-    from qdrant_client import QdrantClient
-    from qdrant_client.http import models
-    from qdrant_client.models import PointStruct
     from sentence_transformers import SentenceTransformer
+    import uuid
     
     # Configure boto3 to work with EKS Pod Identity
-    boto3.setup_default_session(region_name=os.environ.get("AWS_REGION", "us-east-2"))
+    boto3.setup_default_session(region_name=os.environ.get("AWS_REGION", "us-west-2"))
     
     # Basic configurations
-    COLLECTION_NAME = "knowledge_base"
-    EMBEDDING_SIZE = 384  # all-MiniLM-L6-v2 embedding size
+    S3_VECTOR_BUCKET_NAME = os.environ.get("S3_VECTOR_BUCKET_NAME")
+    S3_VECTOR_INDEX_NAME = os.environ.get("S3_VECTOR_INDEX_NAME", "knowledge-base")
     BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+    
     print(f"Using S3 bucket: {BUCKET_NAME}")
+    print(f"Using S3 Vector Bucket: {S3_VECTOR_BUCKET_NAME}")
+    print(f"Using S3 Vector Index: {S3_VECTOR_INDEX_NAME}")
     
     # Initialize the embedding model
     print("Loading SentenceTransformer model...")
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    model = SentenceTransformer(EMBEDDING_MODEL)
     print("Model loaded successfully")
     
-    # Connect to Qdrant
-    print("Connecting to Qdrant...")
-    client = QdrantClient(host="qdrant", port=6333)
-    print("Connected to Qdrant")
+    # Initialize S3 Vectors client
+    print("Connecting to S3 Vectors...")
+    s3vectors_client = boto3.client('s3vectors')
+    s3_client = boto3.client('s3')
+    print("Connected to S3 Vectors")
     
-    # Create collection if it doesn't exist
-    print("Initializing collection...")
-    collections = client.get_collections().collections
-    collection_names = [collection.name for collection in collections]
-    
-    if COLLECTION_NAME not in collection_names:
-        print(f"Creating collection '{COLLECTION_NAME}'...")
-        client.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=models.VectorParams(
-                size=EMBEDDING_SIZE,
-                distance=models.Distance.COSINE
-            )
-        )
-    else:
-        print(f"Collection '{COLLECTION_NAME}' already exists")
-    
-    
-    # Function to process documents
+    # Function to process documents and store in S3 Vectors
     def process_documents(s3_paths):
         total_processed = 0
-        points = []
-    
+        vectors_batch = []
+        batch_size = 100  # S3 Vectors batch size limit
+
         for path_info in s3_paths:
             try:
                 bucket_name = path_info['bucket']
                 key = path_info['key']
                 local_path = f"/tmp/{os.path.basename(key)}"
-    
+
                 print(f"Downloading {key} from bucket {bucket_name} to {local_path}")
-                s3 = boto3.client('s3')
-                s3.download_file(bucket_name, key, local_path)
-    
+                s3_client.download_file(bucket_name, key, local_path)
+
                 # Verify file was downloaded and has content
                 file_size = os.path.getsize(local_path)
                 print(f"Downloaded file size: {file_size} bytes")
-    
+
                 if file_size == 0:
                     print(f"Warning: File {local_path} is empty")
                     continue
-    
+
                 # Process JSONL file
                 with open(local_path, 'r', encoding='utf-8') as file:
                     line_count = 0
                     batch_count = 0
-    
+
                     for line in file:
                         if not line.strip():
                             continue
-    
+
                         # Parse JSON line
                         try:
                             record = json.loads(line)
                         except json.JSONDecodeError as e:
                             print(f"Error parsing JSON at line {line_count + 1}: {str(e)}")
                             continue
-    
+
                         # Extract text fields
                         product = record.get("product", "")
                         category = record.get("category", "")
                         text = record.get("text", "")
-    
+
                         if not text:
                             print(f"Warning: Empty text field in record at line {line_count + 1}")
                             continue
-    
+
                         # Create a rich text representation for embedding
                         combined_text = f"Product: {product}\nCategory: {category}\nDescription: {text}"
-    
+
                         # Generate embedding
                         embedding = model.encode(combined_text)
-    
-                        # Create point with payload
-                        point = PointStruct(
-                            id=abs(hash(combined_text + str(line_count))),
-                            vector=embedding.tolist(),
-                            payload={
+
+                        # Create vector for S3 Vectors
+                        vector = {
+                            "key": str(uuid.uuid4()),  # Unique key for each vector
+                            "data": {"float32": embedding.tolist()},
+                            "metadata": {
                                 "text": text,
                                 "product": product,
                                 "category": category,
                                 "source": os.path.basename(local_path),
-                                "rating": record.get("rating", 0),
-                                "price_range": record.get("price_range", "")
+                                "rating": str(record.get("rating", 0)),
+                                "price_range": record.get("price_range", ""),
+                                "combined_text": combined_text  # Store for retrieval
                             }
-                        )
-                        points.append(point)
-    
-                        # Upload in batches of 100
-                        if len(points) >= 100:
-                            client.upsert(
-                                collection_name=COLLECTION_NAME,
-                                points=points
+                        }
+                        vectors_batch.append(vector)
+
+                        # Upload in batches
+                        if len(vectors_batch) >= batch_size:
+                            response = s3vectors_client.put_vectors(
+                                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                                indexName=S3_VECTOR_INDEX_NAME,
+                                vectors=vectors_batch
                             )
                             batch_count += 1
-                            total_processed += len(points)
-                            print(f"Batch {batch_count}: Uploaded {len(points)} points")
-                            points = []
-    
+                            total_processed += len(vectors_batch)
+                            print(f"Batch {batch_count}: Uploaded {len(vectors_batch)} vectors to S3 Vectors")
+                            vectors_batch = []
+
                         line_count += 1
-    
+
                     print(f"Processed {line_count} records from file: {local_path}")
-    
+
             except Exception as e:
                 print(f"Error processing {path_info}: {str(e)}")
-    
-        # Upload any remaining points
-        if points:
-            client.upsert(
-                collection_name=COLLECTION_NAME,
-                points=points
+                import traceback
+                traceback.print_exc()
+
+        # Upload any remaining vectors
+        if vectors_batch:
+            response = s3vectors_client.put_vectors(
+                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                indexName=S3_VECTOR_INDEX_NAME,
+                vectors=vectors_batch
             )
-            total_processed += len(points)
-            print(f"Final batch: Uploaded {len(points)} points")
-    
+            total_processed += len(vectors_batch)
+            print(f"Final batch: Uploaded {len(vectors_batch)} vectors to S3 Vectors")
+
         return total_processed
-    
-    
+
     # Main function
     def main():
-        print("Starting document processing pipeline...")
-    
+        print("Starting S3 Vectors document processing pipeline...")
+
         # List documents in S3
         print(f"Finding documents in S3 bucket: {BUCKET_NAME}...")
-        s3 = boto3.client('s3')
         s3_paths = []
-    
+
         try:
-            response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix='samples/')
+            response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, Prefix='samples/')
             if 'Contents' in response:
                 for obj in response['Contents']:
                     if obj['Key'].endswith('.jsonl'):
@@ -167,28 +155,47 @@ data:
                             'bucket': BUCKET_NAME,
                             'key': obj['Key']
                         })
-    
+
             print(f"Found {len(s3_paths)} documents in S3")
         except Exception as e:
             print(f"Error accessing S3 bucket: {str(e)}")
             raise e
-    
+
         if not s3_paths:
             print("No documents found in S3. Exiting.")
             return
-    
+
         # Process the documents
         print("Starting document processing...")
         result = process_documents(s3_paths)
         print(f"Total embeddings generated and stored: {result}")
-    
-        # Verify the points were uploaded
-        count_result = client.count(collection_name=COLLECTION_NAME)
-        print(f"Total points in Qdrant collection: {count_result.count}")
-    
-        print("Document processing complete!")
+
+        # Verify vectors were uploaded by querying the index
+        try:
+            # Create a test query to verify data
+            test_query = "electronics product"
+            test_embedding = model.encode(test_query)
+            
+            query_response = s3vectors_client.query_vectors(
+                vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                indexName=S3_VECTOR_INDEX_NAME,
+                queryVector={"float32": test_embedding.tolist()},
+                topK=1,
+                returnMetadata=True
+            )
+            
+            vectors_count = len(query_response.get('vectors', []))
+            print(f"Verification query returned {vectors_count} results")
+            if vectors_count > 0:
+                print(" S3 Vectors storage verification successful!")
+            else:
+                print("  No vectors found in verification query")
+                
+        except Exception as e:
+            print(f"Warning: Could not verify S3 Vectors storage: {str(e)}")
+
+        print("S3 Vectors document processing complete!")
         return result
-    
-    
+
     if __name__ == "__main__":
         main()
