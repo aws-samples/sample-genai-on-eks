@@ -78,6 +78,8 @@ spec:
             - '--swap-space=16'
             - '--disable-custom-all-reduce'
             - '--config-format=mistral'
+            - '--enable-auto-tool-choice'
+            - '--tool-call-parser=mistral'
           env:
             - name: CUDA_LAUNCH_BLOCKING
               value: "1"
