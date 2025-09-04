@@ -42,15 +42,32 @@ spec:
           operator: Exists
       nodeSelector:
         nvidia.com/gpu.present: "true"
+      initContainers:
+        - name: model-loader
+          image: busybox:1.36
+          command: ['sh', '-c', 'cp -r /models/mistral-7b-v0-3 /ram-models/ && echo "Model copied to RAM"']
+          volumeMounts:
+            - name: fsx-storage
+              mountPath: /models
+              readOnly: true
+            - name: ram-storage
+              mountPath: /ram-models
+          resources:
+            requests:
+              cpu: 6
+              memory: 32Gi
+            limits:
+              cpu: 6
+              memory: 32Gi
       containers:
         - name: vllm
-          image: docker.io/vllm/vllm-openai@sha256:4f4037303e8c7b69439db1077bb849a0823517c0f785b894dc8e96d58ef3a0c2
+          image: public.ecr.aws/deep-learning-containers/vllm:0.9.0-gpu-py312-ec2
           imagePullPolicy: IfNotPresent
           args:
             - '--port=8080'
-            - '--model=/local-storage/models/mistral-7b-v0-3'
+            - '--model=/ram-models/mistral-7b-v0-3'
             - '--tokenizer_mode=auto'
-            - '--tokenizer=/local-storage/models/mistral-7b-v0-3'
+            - '--trust-remote-code'
             - '--gpu_memory_utilization=0.90'
             - '--max-model-len=2048'
             - '--tensor-parallel-size=1'
@@ -60,6 +77,7 @@ spec:
             - '--enforce-eager'
             - '--swap-space=16'
             - '--disable-custom-all-reduce'
+            - '--config-format=mistral'
             - '--enable-auto-tool-choice'
             - '--tool-call-parser=mistral'
           env:
@@ -67,6 +85,8 @@ spec:
               value: "1"
             - name: PYTORCH_CUDA_ALLOC_CONF
               value: "max_split_size_mb:512"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASHINFER"
           ports:
             - containerPort: 8080
               protocol: TCP
@@ -81,11 +101,13 @@ spec:
               memory: 32Gi
               nvidia.com/gpu: 1
           volumeMounts:
-            - name: local-storage
-              mountPath: /local-storage
-              readOnly: true
+            - name: ram-storage
+              mountPath: /ram-models
       volumes:
-        - name: local-storage
-          hostPath:
-            path: /local-storage
-            type: Directory
+        - name: fsx-storage
+          persistentVolumeClaim:
+            claimName: fsx-models
+        - name: ram-storage
+          emptyDir:
+            medium: Memory
+            sizeLimit: 20Gi
