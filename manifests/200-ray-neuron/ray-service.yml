@@ -1,0 +1,238 @@
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: vllm
+  namespace: default
+spec:
+  serviceUnhealthySecondThreshold: 900
+  deploymentUnhealthySecondThreshold: 900
+  serveConfigV2: |
+    applications:
+      - name: mistral
+        import_path: "vllm_serve:deployment"
+        route_prefix: "/"
+        deployments:
+          - name: mistral-deployment
+            autoscaling_config:
+              min_replicas: 1
+              max_replicas: 4
+              target_num_ongoing_requests_per_replica: 20
+  rayClusterConfig:
+    rayVersion: '2.43.0'
+    enableInTreeAutoscaling: true
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: '0.0.0.0'
+        num-cpus: "0"
+        num-gpus: "0"
+      template:
+        metadata:
+          labels:
+            ray.io/node-type: head
+        spec:
+          containers:
+          - name: head
+            image: ${CUSTOM_RAY_VLLM_IMAGE}
+            imagePullPolicy: IfNotPresent
+            lifecycle:
+              preStop:
+                exec:
+                  command: ["/bin/sh", "-c", "ray stop"]
+            ports:
+            - containerPort: 6379
+              name: gcs
+            - containerPort: 8265
+              name: dashboard
+            - containerPort: 10001
+              name: client
+            - containerPort: 8000
+              name: serve
+            - containerPort: 52365
+              name: dashboard-agent
+            volumeMounts:
+            - mountPath: /tmp/ray
+              name: ray-logs
+            - name: vllm-script
+              mountPath: /home/ray/python/vllm_serve.py
+              subPath: vllm_serve.py
+            - name: persistent-storage
+              mountPath: /models
+            resources:
+              limits:
+                cpu: 4
+                memory: "16G"
+              requests:
+                cpu: 4
+                memory: "16G"
+            env:
+            - name: PYTHONPATH
+              value: "/opt/conda/lib/python3.10/site-packages:/home/ray/python:$PYTHONPATH"
+            - name: VLLM_PORT
+              value: "8004"
+            - name: PORT
+              value: "8000"
+            - name: LD_LIBRARY_PATH
+              value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            - name: RAY_memory_monitor_refresh_ms
+              value: "0"
+            - name: RAY_memory_usage_threshold
+              value: "0.95"
+          nodeSelector:
+            instanceType: mixed-x86
+            provisionerType: Karpenter
+          volumes:
+          - name: ray-logs
+            emptyDir: {}
+          - name: vllm-script
+            configMap:
+              name: vllm-serve-script
+          - name: persistent-storage
+            persistentVolumeClaim:
+              claimName: fsx-models
+    workerGroupSpecs:
+    - replicas: 1
+      minReplicas: 1
+      maxReplicas: 4
+      groupName: worker-group
+      rayStartParams:
+        resources: '"{\"neuron_cores\": 2}"'
+      template:
+        metadata:
+          labels:
+            ray.io/node-type: worker
+        spec:
+          affinity:
+            podAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                    - key: ray.io/node-type
+                      operator: In
+                      values:
+                      - head
+                  topologyKey: kubernetes.io/zone
+          initContainers:
+          - name: model-download
+            image: amazon/aws-cli
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -e              
+                echo "Checking target directory..."
+                if [ ! -d "/tmp/models/mistral-7b-v0.3" ]; then
+                  echo "Creating target directory..."
+                  mkdir -p /tmp/models/mistral-7b-v0.3
+                
+                  echo "Copying files..."
+                  if [ -d "/models/mistral-7b-v0.3" ]; then
+                    cp -rv /models/mistral-7b-v0.3/* /tmp/models/mistral-7b-v0.3/
+                    echo "Copy completed. New directory structure:"
+                    ls -la /tmp/models/mistral-7b-v0.3/
+                  else
+                    echo "Source directory /models/mistral-7b-v0.3 does not exist!"
+                    exit 1
+                  fi
+                else
+                  echo "Target directory already exists"
+                fi
+            volumeMounts:
+              - name: persistent-storage
+                mountPath: /models
+              - name: local-storage
+                mountPath: /tmp/models
+          containers:
+          - name: worker
+            image: ${CUSTOM_RAY_VLLM_IMAGE}
+            imagePullPolicy: IfNotPresent
+            lifecycle:
+              preStop:
+                exec:
+                  command: ["/bin/sh", "-c", "ray stop"]
+            volumeMounts:
+            - mountPath: /tmp/ray
+              name: ray-logs
+            - name: vllm-script
+              mountPath: /home/ray/python/vllm_serve.py
+              subPath: vllm_serve.py
+            - name: local-storage
+              mountPath: /tmp/models
+            - mountPath: /dev/shm
+              name: dshm
+            - name: persistent-storage
+              mountPath: /models
+            resources:
+              limits:
+                cpu: 4
+                memory: "26Gi"
+                aws.amazon.com/neuron: "1"
+              requests:
+                cpu: 4
+                memory: "26Gi"
+                aws.amazon.com/neuron: "1"
+            env:
+            - name: MODEL_ID
+              value: "/tmp/models/mistral-7b-v0.3"
+            - name: MAX_MODEL_LEN
+              value: "2048"
+            - name: MAX_NUM_SEQS
+              value: "4"
+            - name: TENSOR_PARALLEL_SIZE
+              value: "2"
+            - name: NEURON_CORES
+              value: "2"
+            - name: NEURON_RT_ASYNC_EXEC
+              value: "1"
+            - name: NEURON_RT_NUM_CORES
+              value: "2"
+            - name: NEURON_RT_VISIBLE_CORES
+              value: "0,1"
+            - name: VLLM_NEURON_FRAMEWORK
+              value: "neuronx-distributed-inference"
+            - name: NEURON_COMPILED_ARTIFACTS
+              value: "/tmp/models/mistral-7b-v0.3"
+            - name: NEURON_CC_FLAGS
+              value: "-O1"
+            - name: NEURON_COMPILE_ONLY
+              value: "0"
+            - name: PYTHONPATH
+              value: "/opt/conda/lib/python3.10/site-packages:/home/ray/python:$PYTHONPATH"
+            - name: VLLM_PORT
+              value: "8004"
+            - name: LD_LIBRARY_PATH
+              value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            - name: PORT
+              value: "8000"
+            - name: RAY_gcs_server_request_timeout_seconds
+              value: "180"
+            - name: RAY_SERVE_KV_TIMEOUT_S
+              value: "180"
+            - name: RAY_memory_monitor_refresh_ms
+              value: "0"
+            - name: RAY_memory_usage_threshold
+              value: "0.95"
+          nodeSelector:
+            instanceType: trn1.2xlarge
+            provisionerType: Karpenter
+            neuron.amazonaws.com/neuron-device: "true"
+          tolerations:
+          - key: "aws.amazon.com/neuron"
+            operator: "Exists"
+            effect: "NoSchedule"
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+          - name: ray-logs
+            emptyDir: {}
+          - name: vllm-script
+            configMap:
+              name: vllm-serve-script
+          - name: persistent-storage
+            persistentVolumeClaim:
+              claimName: fsx-models
+          - name: local-storage
+            hostPath:
+              path: /mnt/k8s-disks/0
+              type: Directory
