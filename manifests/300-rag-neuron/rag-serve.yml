@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-serve-script
+data:
+  rag_serve.py: |
+    import os
+    import time
+    import boto3
+    from sentence_transformers import SentenceTransformer
+    from ray import serve
+    import aiohttp
+    
+    # Configuration parameters
+    S3_VECTOR_BUCKET_NAME = os.environ.get("S3_VECTOR_BUCKET_NAME")
+    S3_VECTOR_INDEX_NAME = os.environ.get("S3_VECTOR_INDEX_NAME", "knowledge-base")
+    RAG_PROMPT_TEMPLATE = """
+    You are an AI assistant designed to help users with questions. You have been provided with relevant context extracted from documents.
+    
+    Context information:
+    {context}
+    
+    Based on the above context, please answer the following question in detail:
+    {query}
+    
+    If the context doesn't contain information to answer the question directly, please say so and provide a general response.
+    """
+    
+    @serve.deployment(
+        name="rag-service-deployment",
+        autoscaling_config={
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "target_num_ongoing_requests_per_replica": 5,
+        },
+        ray_actor_options={"num_cpus": 1, "num_gpus": 0},
+    )
+    
+    class RAGMistralDeployment:
+        def __init__(self, model, model_endpoint):
+            self.model = model
+            self.model_endpoint = model_endpoint
+            
+            # Configure boto3 session
+            aws_region = os.environ.get("AWS_REGION", "us-west-2")
+            boto3.setup_default_session(region_name=aws_region)
+            
+            # Initialize the embedding model
+            print("Initializing the embedding model...")
+            self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            # Initialize the S3 Vectors client
+            print("Connecting to S3 Vectors...")
+            self.s3vectors_client = boto3.client('s3vectors', region_name=aws_region)
+            
+            # Initialize aiohttp session for making requests to the LLM service
+            self.session = aiohttp.ClientSession()
+            print("S3 Vectors RAG Service initialization complete!")
+    
+        async def retrieve_context(self, query: str, top_k: int = 3) -> str:
+            """Retrieve relevant context from S3 Vectors"""
+            try:
+                # Generate embedding for the query
+                query_embedding = self.embed_model.encode(query)
+                
+                # Search for similar vectors in S3 Vectors
+                search_result = self.s3vectors_client.query_vectors(
+                    vectorBucketName=S3_VECTOR_BUCKET_NAME,
+                    indexName=S3_VECTOR_INDEX_NAME,
+                    queryVector={"float32": query_embedding.tolist()},
+                    topK=top_k,
+                    returnMetadata=True,
+                    returnDistance=True
+                )
+                
+                # Extract and format the context
+                contexts = []
+                for vector in search_result.get('vectors', []):
+                    metadata = vector.get('metadata', {})
+                    distance = vector.get('distance', 1.0)
+                    similarity = 1 - distance
+                    
+                    # Format context with similarity score
+                    context_text = f"[Source: {metadata.get('source', 'unknown')} - Product: {metadata.get('product', 'N/A')} - Similarity: {similarity:.3f}]"
+                    context_text += f"\n{metadata.get('text', '')}"
+                    contexts.append(context_text)
+    
+                return "\n\n".join(contexts)
+            except Exception as e:
+                print(f"Error retrieving context from S3 Vectors: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return "No relevant context found due to an error."
+        
+        def _create_chat_request(self, content):
+            """Create a chat request for the LLM service"""
+            return {
+                "model": self.model,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.7,
+                "max_tokens": 1024
+            }
+
+        async def __call__(self, request):
+            """Process incoming requests with S3 Vectors retrieval"""
+            start_time = time.time()
+    
+            # Handle different request types
+            try:
+                # Starlette/FastAPI Request handling
+                if hasattr(request, "json") and callable(getattr(request, "json", None)):
+                    req_data = await request.json()
+                else:
+                    req_data = request
+    
+                # Extract query and parameters
+                query = None
+                use_rag = True
+    
+                if isinstance(req_data, dict):
+                    query = req_data.get("query", "")
+                    if not query:
+                        query = req_data.get("prompt", "")
+                    if not query and "messages" in req_data:
+                        messages = req_data.get("messages", [])
+                        last_user_message = next((msg["content"] for msg in reversed(messages) 
+                                                if msg.get("role") == "user"), None)
+                        if last_user_message:
+                            query = last_user_message
+                    use_rag = req_data.get("use_rag", True)
+                else:
+                    return {"error": "Invalid request format"}
+                    
+                if not query:
+                    return {"error": "No query provided"}
+            except Exception as e:
+                return {"error": f"Request processing error: {str(e)}"}
+            
+            # Process with or without RAG
+            if use_rag:
+                # Retrieve relevant context from S3 Vectors
+                context = await self.retrieve_context(query)
+                # Create the RAG-enhanced prompt
+                rag_prompt = RAG_PROMPT_TEMPLATE.format(context=context, query=query)
+                chat_request = self._create_chat_request(rag_prompt)
+
+                # Make request to VLLM deployment
+                async with self.session.post(
+                    self.model_endpoint,
+                    json=chat_request
+                ) as response:
+                    result = await response.json()
+                    generated_text = result['choices'][0]['message']['content']
+                            
+                response = {
+                    "generated_text": generated_text,
+                    "query": query,
+                    "context_used": context,
+                    "rag_enabled": True,
+                    "vector_store": "S3 Vectors",
+                    "processing_time": time.time() - start_time
+                }
+            else:
+                # Standard LLM completion without RAG
+                chat_request = self._create_chat_request(query)
+                async with self.session.post(
+                    self.model_endpoint,
+                    json=chat_request
+                ) as response:
+                    result = await response.json()
+                    generated_text = result['choices'][0]['message']['content']
+                
+                response = {
+                    "generated_text": generated_text,
+                    "query": query,
+                    "rag_enabled": False,
+                    "vector_store": "None",
+                    "processing_time": time.time() - start_time
+                }
+            return response
+        
+        async def shutdown(self):
+            await self.session.close()
+
+    # Create the deployment
+    deployment = RAGMistralDeployment.bind(
+        model=os.environ.get('MODEL_ID', '/tmp/models/mistral-7b-v0.3'),
+        model_endpoint=os.environ.get('MODEL_ENDPOINT', 'http://vllm-serve-svc:8000/v1/chat/completions')
+    )
