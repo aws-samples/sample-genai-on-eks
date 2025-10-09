@@ -15,6 +15,9 @@ spec:
           env_vars:
             LD_LIBRARY_PATH: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
             MODEL_ID: "/models/mistral-7b-v0-3"
+            HEAD_DIM: "128"
+            ENABLE_AUTO_TOOL_CHOICE: "true"
+            TOOL_CALL_PARSER: "mistral"
             GPU_MEMORY_UTILIZATION: "0.9"
             MAX_MODEL_LEN: "8192"
             MAX_NUM_SEQS: "4"
@@ -36,7 +39,7 @@ spec:
               num_cpus: 1
               num_gpus: 1
   rayClusterConfig:
-    rayVersion: '2.43.0'
+    rayVersion: '2.49.0'
     enableInTreeAutoscaling: true
     headGroupSpec:
       headService:
@@ -50,7 +53,7 @@ spec:
         spec:
           containers:
           - name: ray-head
-            image: public.ecr.aws/aws-containers/aiml/ray-2.43.0-py311-vllm0.7.3:latest
+            image: sha256:35451e29e23ab5b1ebccfeec3dc3d3975bd74d414d90773734950f78894d200e
             imagePullPolicy: IfNotPresent
             lifecycle:
               preStop:
@@ -110,7 +113,7 @@ spec:
         spec:
           containers:
           - name: ray-worker
-            image: public.ecr.aws/aws-containers/aiml/ray-2.43.0-py311-vllm0.7.3:latest
+            image: sha256:35451e29e23ab5b1ebccfeec3dc3d3975bd74d414d90773734950f78894d200e
             imagePullPolicy: IfNotPresent
             lifecycle:
               preStop:
