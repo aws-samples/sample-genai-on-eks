@@ -14,7 +14,7 @@ spec:
         runtime_env:
           env_vars:
             LD_LIBRARY_PATH: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
-            MODEL_ID: "s3://${S3_BUCKET_NAME}/mistral-7b-v0-3/"
+            MODEL_ID: "/models/mistral-7b-v0-3"
             HEAD_DIM: "128"
             ENABLE_AUTO_TOOL_CHOICE: "true"
             TOOL_CALL_PARSER: "mistral"
@@ -93,7 +93,7 @@ spec:
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
           nodeSelector:
-            node.kubernetes.io/instance-type: m5.xlarge
+            intent: apps
           volumes:
           - name: ray-logs
             emptyDir: {}
