@@ -5,19 +5,25 @@ metadata:
 data:
   vllm_serve.py: |
     import os
+    import re
     from typing import Optional
     from fastapi import FastAPI
+    from prometheus_client import make_asgi_app
     from starlette.requests import Request
     from starlette.responses import StreamingResponse, JSONResponse
+    from starlette.routing import Mount
     from ray import serve
     from vllm.engine.arg_utils import AsyncEngineArgs
     from vllm.engine.async_llm_engine import AsyncLLMEngine
     from vllm.entrypoints.openai.protocol import (
+        CompletionRequest,
+        CompletionResponse,
         ChatCompletionRequest,
         ChatCompletionResponse,
         ErrorResponse,
     )
     from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+    from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
     from vllm.entrypoints.openai.serving_models import OpenAIServingModels, BaseModelPath
     from vllm.config import ModelConfig
     from vllm.logger import init_logger
@@ -41,11 +47,17 @@ data:
             response_role: str = "assistant",
             chat_template: Optional[str] = None,
         ):
+            # Setup vLLM metrics for scraping
+            route = Mount("/metrics", make_asgi_app())
+            # Workaround for 307 Redirect for /metrics
+            route.path_regex = re.compile('^/metrics(?P<path>.*)')
+            app.routes.append(route)
+                     
             logger.info("VLLMDeployment is initializing...")
             self.model_path = model
             self.max_model_len = max_model_len
 
-            # Create ModelConfig
+            # Base model config
             self.model_config = ModelConfig(
                 model=model,
                 task="generate",
@@ -57,20 +69,32 @@ data:
                 max_model_len=max_model_len,
             )
 
-            # Initialize VLLM Engine
-            engine_args = AsyncEngineArgs(
-                model=model,
-                tokenizer_mode="mistral",
-                tensor_parallel_size=tensor_parallel_size,
-                max_num_seqs=max_num_seqs,
-                max_model_len=max_model_len,
-                disable_log_requests=True,
-                device="cuda",
-                dtype="bfloat16",
-                trust_remote_code=True,
-                gpu_memory_utilization=0.9,
-                enable_chunked_prefill=True
-            )
+            # HF config override (e.g., head_dim for Mistral)
+            hf_overrides = {}
+            _hd = os.environ.get("HEAD_DIM")
+            if _hd:
+                try:
+                    hf_overrides["head_dim"] = int(_hd)
+                    logger.info(f"Using HF override head_dim={hf_overrides['head_dim']}")
+                except ValueError:
+                    logger.warning("HEAD_DIM is not an int; ignoring override.")
+
+            # Engine args - conditionally add hf_overrides
+            engine_kwargs = {
+                "model": model,
+                "tokenizer_mode": "mistral",
+                "tensor_parallel_size": tensor_parallel_size,
+                "max_num_seqs": max_num_seqs,
+                "max_model_len": max_model_len,
+                "dtype": "bfloat16",
+                "trust_remote_code": True,
+                "gpu_memory_utilization": 0.9,
+                "enable_chunked_prefill": True,
+            }
+            if hf_overrides:
+                engine_kwargs["hf_overrides"] = hf_overrides
+                     
+            engine_args = AsyncEngineArgs(**engine_kwargs)
             logger.info(f"Engine Args Initialized: {engine_args}")
 
             try:
@@ -83,8 +107,9 @@ data:
             self.response_role = response_role
             self.chat_template = chat_template
             self.openai_serving_chat = None
+            self.openai_serving = None
 
-            # Initialize OpenAIServingModels with model_config
+            # Models shim
             self.models = OpenAIServingModels(
                 engine_client=None,
                 model_config=self.model_config,
@@ -92,13 +117,11 @@ data:
             )
 
         async def health_check(self):
-            """Health check for Ray Serve deployment"""
             logger.info("Health check passed for VLLMDeployment.")
             return "OK"
 
         @app.get("/v1/models")
         async def get_models(self):
-            """List available models in OpenAI format."""
             return JSONResponse(
                 content={
                     "object": "list",
@@ -113,6 +136,33 @@ data:
                 }
             )
 
+        @app.post("/v1/completions")
+        async def create_completion(self, request: CompletionRequest, raw_request: Request):
+            if not self.openai_serving:
+                model_config = await self.engine.get_model_config()
+                base_model_paths = [BaseModelPath(name=self.model_path, model_path=self.model_path)]
+                openai_serving_models = OpenAIServingModels(
+                    engine_client=self.engine,
+                    model_config=model_config,
+                    base_model_paths=base_model_paths,
+                )
+                self.openai_serving = OpenAIServingCompletion(
+                    engine_client=self.engine,
+                    model_config=model_config,
+                    models=openai_serving_models,
+                    request_logger=None
+                )
+
+            logger.info(f"Request: {request}")
+            generator = await self.openai_serving.create_completion(request, raw_request)
+            if isinstance(generator, ErrorResponse):
+                return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+            if request.stream:
+                return StreamingResponse(content=generator, media_type="text/event-stream")
+            else:
+                assert isinstance(generator, CompletionResponse)
+                return JSONResponse(content=generator.model_dump())
+
         @app.post("/v1/chat/completions")
         async def create_chat_completion(
             self, request: ChatCompletionRequest, raw_request: Request
@@ -121,20 +171,31 @@ data:
             if not self.openai_serving_chat:
                 logger.info("Initializing OpenAIServingChat instance...")
 
+                # Tool-calling toggles (no template needed)
+                enable_tools = os.environ.get("ENABLE_AUTO_TOOL_CHOICE", "false").lower() in ("1", "true", "yes")
+                tool_parser = os.environ.get("TOOL_CALL_PARSER", "").strip() or None
+
+                model_config = await self.engine.get_model_config()
+                base_model_paths = [BaseModelPath(name=self.model_path, model_path=self.model_path)]
+                openai_serving_models = OpenAIServingModels(
+                    engine_client=self.engine,
+                    model_config=model_config,
+                    base_model_paths=base_model_paths,
+                )
                 self.openai_serving_chat = OpenAIServingChat(
                     engine_client=self.engine,
-                    model_config=self.model_config,
-                    models=self.models,
+                    model_config=model_config,
+                    models=openai_serving_models,
                     response_role=self.response_role,
                     request_logger=None,
-                    chat_template=self.chat_template,
+                    chat_template=self.chat_template,        # None is fine
                     chat_template_content_format="default",
                     return_tokens_as_token_ids=False,
-                    enable_auto_tools=False,
-                    tool_parser=None,
+                    enable_auto_tools=enable_tools,          # tool calling on/off
+                    tool_parser=tool_parser,                 # e.g., "mistral"
                     enable_prompt_tokens_details=False,
                 )
-                logger.info("OpenAIServingChat initialized successfully")
+                logger.info(f"OpenAIServingChat initialized. tools={enable_tools} parser={tool_parser!r}")
 
             logger.info(f"Received request: {request}")
             generator = await self.openai_serving_chat.create_chat_completion(request, raw_request)
