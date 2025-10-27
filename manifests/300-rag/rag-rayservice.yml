@@ -95,7 +95,7 @@ spec:
             - name: AWS_REGION
               value: "${AWS_REGION}"
           nodeSelector:
-            node.kubernetes.io/instance-type: m5.xlarge
+            intent: apps
           volumes:
           - name: ray-logs
             emptyDir: {}
