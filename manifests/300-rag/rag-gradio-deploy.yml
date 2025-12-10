@@ -14,6 +14,8 @@ spec:
       labels:
         app: rag-gradio-interface
     spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "m5.xlarge"
       containers:
       - name: gradio-app
         image: python:3.11-slim

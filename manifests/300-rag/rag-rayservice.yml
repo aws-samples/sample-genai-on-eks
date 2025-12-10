@@ -95,7 +95,7 @@ spec:
             - name: AWS_REGION
               value: "${AWS_REGION}"
           nodeSelector:
-            node.kubernetes.io/instance-type: m5.xlarge
+            intent: apps
           volumes:
           - name: ray-logs
             emptyDir: {}
@@ -104,7 +104,7 @@ spec:
               name: rag-serve-script
           - name: persistent-storage
             persistentVolumeClaim:
-              claimName: fsx-models
+              claimName: mistral-model-pvc
     workerGroupSpecs:
     - replicas: 1
       minReplicas: 1
@@ -156,4 +156,4 @@ spec:
               name: rag-serve-script
           - name: persistent-storage
             persistentVolumeClaim:
-              claimName: fsx-models
+              claimName: mistral-model-pvc

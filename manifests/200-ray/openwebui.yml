@@ -15,36 +15,37 @@ spec:
       labels:
         app: open-webui
     spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: "m5.xlarge"
       containers:
-        - name: open-webui
-          image: ghcr.io/open-webui/open-webui:v0.5.20
-          ports:
-            - containerPort: 8080
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "500Mi"
-            limits:
-              cpu: "1000m"
-              memory: "1Gi"
-          env:
-            - name: OPENAI_API_BASE_URLS
-              value: "http://vllm-serve-svc:8000/v1"
-            - name: OPENAI_API_KEY
-              value: "dummy"
-            - name: WEBUI_AUTH
-              value: "False"
-            - name: ENABLE_OLLAMA_API
-              value: "False"
-            - name: ENABLE_EVALUATION_ARENA_MODELS
-              value: "False"
-          volumeMounts:
-            - name: webui-volume
-              mountPath: /app/backend/data
-      volumes:
+      - name: open-webui
+        image: ghcr.io/open-webui/open-webui:v0.5.20
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "500Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        env:
+        - name: OPENAI_API_BASE_URLS
+          value: "http://vllm-serve-svc:8000/v1"
+        - name: OPENAI_API_KEY
+          value: "dummy"
+        - name: WEBUI_AUTH
+          value: "False"
+        - name: ENABLE_OLLAMA_API
+          value: "False"
+        - name: ENABLE_EVALUATION_ARENA_MODELS
+          value: "False"
+        volumeMounts:
         - name: webui-volume
-          emptyDir: {}
-
+          mountPath: /app/backend/data
+      volumes:
+      - name: webui-volume
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -58,10 +59,9 @@ spec:
   selector:
     app: open-webui
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8080
-
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
