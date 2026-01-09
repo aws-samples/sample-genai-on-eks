@@ -80,11 +80,11 @@ spec:
               mountPath: /models
             resources:
               limits:
-                cpu: 2
-                memory: "12G"
+                cpu: 1
+                memory: "6G"
               requests:
-                cpu: 2
-                memory: "12G"
+                cpu: 1
+                memory: "6G"
             env:
             - name: PYTHONPATH
               value: "/home/ray/python"
@@ -92,6 +92,21 @@ spec:
               value: "8004"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+          nodeSelector:
+            nvidia.com/gpu.present: "true"
+          tolerations:
+          - key: "nvidia.com/gpu"
+            operator: "Exists"
+            effect: "NoSchedule"
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: ["true"]
           volumes:
           - name: ray-logs
             emptyDir: {}
@@ -127,12 +142,12 @@ spec:
               mountPath: /models
             resources:
               limits:
-                cpu: 6
-                memory: "28Gi"
+                cpu: 5
+                memory: "48Gi"
                 nvidia.com/gpu: 1
               requests:
-                cpu: 6
-                memory: "28Gi"
+                cpu: 5
+                memory: "48Gi"
                 nvidia.com/gpu: 1
             env:
             - name: PYTHONPATH
