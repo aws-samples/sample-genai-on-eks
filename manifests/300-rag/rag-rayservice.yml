@@ -94,8 +94,6 @@ spec:
               value: "${S3_VECTOR_INDEX_NAME}"
             - name: AWS_REGION
               value: "${AWS_REGION}"
-          nodeSelector:
-            intent: apps
           volumes:
           - name: ray-logs
             emptyDir: {}
