@@ -45,7 +45,7 @@ spec:
         nvidia.com/gpu.present: "true"
       containers:
         - name: vllm
-          image: public.ecr.aws/deep-learning-containers/vllm:0.10.2-gpu-py312-ec2
+          image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.10.2-gpu-py312-ec2
           imagePullPolicy: IfNotPresent
           args:
             - '--port=8080'
