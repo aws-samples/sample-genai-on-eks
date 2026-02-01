@@ -49,7 +49,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - '--port=8000'
-            - '--model=s3://genai-models-205342331675/mistral-7b-v0-3/'
+            - '--model=s3://${S3_BUCKET_NAME}/mistral-7b-v0-3/'
             - '--load-format=runai_streamer'
             - '--model-loader-extra-config={"concurrency":16}'
             - '--tokenizer_mode=auto'
