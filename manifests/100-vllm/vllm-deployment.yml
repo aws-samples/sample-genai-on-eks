@@ -2,19 +2,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mistral
+  name: vllm-serve-svc
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/app-metrics: "true"
-    prometheus.io/port: "8080"
+    prometheus.io/port: "8000"
   labels:
     model: mistral7b
 spec:
   ports:
     - name: http
-      port: 8080
+      port: 8000
       protocol: TCP
-      targetPort: 8080
+      targetPort: 8000
   selector:
     model: mistral7b
 ---
@@ -48,8 +48,8 @@ spec:
           image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.10.2-gpu-py312-ec2
           imagePullPolicy: IfNotPresent
           args:
-            - '--port=8080'
-            - '--model=s3://${S3_BUCKET_NAME}/mistral-7b-v0-3/'
+            - '--port=8000'
+            - '--model=s3://genai-models-205342331675/mistral-7b-v0-3/'
             - '--load-format=runai_streamer'
             - '--model-loader-extra-config={"concurrency":16}'
             - '--tokenizer_mode=auto'
@@ -74,7 +74,7 @@ spec:
             - name: VLLM_ATTENTION_BACKEND
               value: "FLASHINFER"
           ports:
-            - containerPort: 8080
+            - containerPort: 8000
               protocol: TCP
               name: http
           resources:
@@ -89,7 +89,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 8000
             initialDelaySeconds: 60
             periodSeconds: 10
             timeoutSeconds: 5
@@ -97,7 +97,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8080
+              port: 8000
             initialDelaySeconds: 120
             periodSeconds: 30
             timeoutSeconds: 10
