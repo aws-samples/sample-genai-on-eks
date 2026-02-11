@@ -42,7 +42,7 @@ spec:
           key: nvidia.com/gpu
           operator: Exists
       nodeSelector:
-        nvidia.com/gpu.present: "true"
+        karpenter.sh/nodepool: gpu
       containers:
         - name: vllm
           image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.10.2-gpu-py312-ec2
