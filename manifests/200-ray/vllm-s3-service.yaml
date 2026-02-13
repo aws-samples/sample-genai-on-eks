@@ -93,7 +93,7 @@ spec:
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
           nodeSelector:
-            nvidia.com/gpu.present: "true"
+            karpenter.sh/nodepool: gpu
           tolerations:
           - key: "nvidia.com/gpu"
             operator: "Exists"
@@ -157,7 +157,7 @@ spec:
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
           nodeSelector:
-            nvidia.com/gpu.present: "true"
+            karpenter.sh/nodepool: gpu
           tolerations:
           - key: "nvidia.com/gpu"
             operator: "Exists"
