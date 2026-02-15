@@ -74,8 +74,6 @@ spec:
             - name: rag-serve-script
               mountPath: /home/ray/python/rag_serve.py
               subPath: rag_serve.py
-            - name: persistent-storage
-              mountPath: /models
             resources:
               limits:
                 cpu: 2
@@ -100,9 +98,6 @@ spec:
           - name: rag-serve-script
             configMap:
               name: rag-serve-script
-          - name: persistent-storage
-            persistentVolumeClaim:
-              claimName: mistral-model-pvc
     workerGroupSpecs:
     - replicas: 1
       minReplicas: 1
@@ -126,15 +121,13 @@ spec:
             - name: rag-serve-script
               mountPath: /home/ray/python/rag_serve.py
               subPath: rag_serve.py
-            - name: persistent-storage
-              mountPath: /models
             resources:
               limits:
                 cpu: 2
-                memory: "2Gi"
+                memory: "4Gi"
               requests:
                 cpu: 1
-                memory: "2Gi"
+                memory: "4Gi"
             env:
             - name: PYTHONPATH
               value: "/home/ray/python"
@@ -152,6 +145,3 @@ spec:
           - name: rag-serve-script
             configMap:
               name: rag-serve-script
-          - name: persistent-storage
-            persistentVolumeClaim:
-              claimName: mistral-model-pvc
