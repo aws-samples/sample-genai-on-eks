@@ -8,7 +8,7 @@ metadata:
     prometheus.io/app-metrics: "true"
     prometheus.io/port: "8000"
   labels:
-    model: mistral7b
+    model: mistral
 spec:
   ports:
     - name: http
@@ -16,25 +16,25 @@ spec:
       protocol: TCP
       targetPort: 8000
   selector:
-    model: mistral7b
+    model: mistral
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mistral
   labels:
-    model: mistral7b
+    model: mistral
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      model: mistral7b
+      model: mistral
   template:
     metadata:
       labels:
-        model: mistral7b
+        model: mistral
     spec:
       serviceAccountName: model-storage-sa
       tolerations:
@@ -45,11 +45,11 @@ spec:
         karpenter.sh/nodepool: gpu
       containers:
         - name: vllm
-          image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.10.2-gpu-py312-ec2
+          image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.15.1-gpu-py312-cu129-ubuntu22.04-ec2-v1.1-soci
           imagePullPolicy: IfNotPresent
           args:
             - '--port=8000'
-            - '--model=s3://${S3_BUCKET_NAME}/mistral-7b-v0-3/'
+            - '--model=s3://${S3_BUCKET_NAME}/Ministral-3-8B-Instruct-2512/'
             - '--load-format=runai_streamer'
             - '--model-loader-extra-config={"concurrency":16}'
             - '--tokenizer_mode=auto'

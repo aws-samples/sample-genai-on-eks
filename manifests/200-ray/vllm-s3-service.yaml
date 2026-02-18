@@ -14,7 +14,7 @@ spec:
         runtime_env:
           env_vars:
             LD_LIBRARY_PATH: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
-            MODEL_ID: "/models/mistral-7b-v0-3"
+            MODEL_ID: "/models/Ministral-3-8B-Instruct-2512"
             HEAD_DIM: "128"
             ENABLE_AUTO_TOOL_CHOICE: "true"
             TOOL_CALL_PARSER: "mistral"
@@ -36,10 +36,10 @@ spec:
             graceful_shutdown_timeout_s: 5
             max_concurrent_queries: 100
             ray_actor_options:
-              num_cpus: 1
+              num_cpus: 0
               num_gpus: 1
   rayClusterConfig:
-    rayVersion: '2.49.0'
+    rayVersion: '2.53.0'
     enableInTreeAutoscaling: true
     headGroupSpec:
       headService:
@@ -48,13 +48,21 @@ spec:
           namespace: default
       rayStartParams:
         dashboard-host: '0.0.0.0'
-        num-cpus: "0"
+        dashboard-port: '8265'
+        num-cpus: "1"
       template:
         spec:
           containers:
           - name: ray-head
-            image: public.ecr.aws/deep-learning-containers/vllm:0.10.2-gpu-py312-cu128-ubuntu22.04-rayserve-ec2-v1.0-soci
+            image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.15.1-gpu-py312-cu129-ubuntu22.04-ec2-v1.1-soci
             imagePullPolicy: IfNotPresent
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              echo "Installing Ray dashboard dependencies..."
+              pip install -q 'ray[default]==2.53.0'
+              echo "Starting Ray head node..."
+              ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265 --num-cpus=1 --num-gpus=0 --metrics-export-port=8080 --block --dashboard-agent-listen-port=52365 --no-monitor --memory=6000000000
             lifecycle:
               preStop:
                 exec:
@@ -92,6 +100,16 @@ spec:
               value: "8004"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            readinessProbe:
+              exec:
+                command:
+                - bash
+                - -c
+                - ray health-check --address 127.0.0.1:6379 > /dev/null 2>&1
+              initialDelaySeconds: 10
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 120
           nodeSelector:
             karpenter.sh/nodepool: gpu
           tolerations:
@@ -126,8 +144,15 @@ spec:
         spec:
           containers:
           - name: ray-worker
-            image: public.ecr.aws/deep-learning-containers/vllm:0.10.2-gpu-py312-cu128-ubuntu22.04-rayserve-ec2-v1.0-soci
+            image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.15.1-gpu-py312-cu129-ubuntu22.04-ec2-v1.1-soci
             imagePullPolicy: IfNotPresent
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              echo "Installing Ray dependencies..."
+              pip install -q 'ray[default]==2.53.0'
+              echo "Starting Ray worker node..."
+              ray start --address=$RAY_ADDRESS --metrics-export-port=8080 --block --num-cpus=5 --memory=51539607552 --num-gpus=1 --no-monitor
             lifecycle:
               preStop:
                 exec:
@@ -156,6 +181,26 @@ spec:
               value: "8004"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            livenessProbe:
+              exec:
+                command:
+                - bash
+                - -c
+                - ray status > /dev/null 2>&1
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 120
+            readinessProbe:
+              exec:
+                command:
+                - bash
+                - -c
+                - ray status > /dev/null 2>&1
+              initialDelaySeconds: 10
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 10
           nodeSelector:
             karpenter.sh/nodepool: gpu
           tolerations:
