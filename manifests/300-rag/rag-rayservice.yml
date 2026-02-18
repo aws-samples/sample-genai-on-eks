@@ -15,7 +15,7 @@ spec:
           pip: ["sentence-transformers", "boto3>=1.34.0"]
           env_vars:
             LD_LIBRARY_PATH: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
-            MODEL_ID: "/models/mistral-7b-v0-3"
+            MODEL_ID: "/models/Ministral-3-8B-Instruct-2512"
             MODEL_ENDPOINT: "http://vllm-serve-svc:8000/v1/chat/completions"
             S3_VECTOR_BUCKET_NAME: "${S3_VECTOR_BUCKET_NAME}"
             S3_VECTOR_INDEX_NAME: "${S3_VECTOR_INDEX_NAME}"
