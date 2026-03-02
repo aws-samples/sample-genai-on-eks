@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-scripts-v2
+data:
+  query-twice.py: |
+    import time
+    from openai import OpenAI
+    from transformers import AutoTokenizer
+
+    client = OpenAI(
+        api_key="dummy-key",
+        base_url="http://localhost:8080/v1"
+    )
+
+    models = client.models.list()
+    model = models.data[0].id
+
+    # Read the generated documentation files - target ~3500 tokens to stay under 4096 with question
+    with open("/tmp/python-docs.txt", "r") as f:
+        python_docs = f.read()[:16000]  # ~3200 tokens + question = ~3500 total
+    
+    with open("/tmp/bash-docs.txt", "r") as f:
+        bash_docs = f.read()[:16000]  # ~3200 tokens + question = ~3500 total
+    
+    # Create contexts with 90% overlap
+    split_point = int(len(python_docs) * 0.9)
+    first_90_percent = python_docs[:split_point]
+    
+    # Get 10% length from bash docs
+    bash_10_percent_length = len(python_docs) - split_point
+    bash_replacement = bash_docs[:bash_10_percent_length]
+    
+    # Create two contexts
+    cold_context = python_docs
+    warm_context = first_90_percent + bash_replacement
+
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
+    question = "Summarize the key concepts in 2 sentences."
+
+    def query_and_measure_ttft(context, label):
+        prompt = f"{context}\n\n{question}"
+        print(f"Number of tokens in {label} prompt: {len(tokenizer.encode(prompt))}")
+        
+        start = time.perf_counter()
+        ttft = None
+
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            temperature=0.7,
+            stream=True,
+        )
+
+        for chunk in chat_completion:
+            chunk_message = chunk.choices[0].delta.content
+            if chunk_message is not None:
+                if ttft is None:
+                    ttft = time.perf_counter()
+                print(chunk_message, end="", flush=True)
+
+        print("\n")
+        return ttft - start
+
+    print("Querying vLLM server with cold LMCache CPU Offload")
+    cold_ttft = query_and_measure_ttft(cold_context, "cold")
+    print(f"Cold TTFT: {cold_ttft:.3f} seconds")
+
+    print("\nQuerying vLLM server with warm LMCache CPU Offload (90% same content)")
+    warm_ttft = query_and_measure_ttft(warm_context, "warm")
+    print(f"Warm TTFT: {warm_ttft:.3f} seconds")
+
+    print(f"\nTTFT Improvement: {(cold_ttft - warm_ttft):.3f} seconds ({(cold_ttft/warm_ttft):.1f}x faster)")

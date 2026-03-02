@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lmcache-test-pod
+  labels:
+    app: lmcache-test
+    model: mistral7b
+spec:
+  serviceAccountName: model-storage-sa
+  restartPolicy: Never
+  tolerations:
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
+  nodeSelector:
+    karpenter.sh/nodepool: gpu
+  containers:
+  - name: vllm-server
+    image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.10.2-gpu-py312-ec2
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      # Install lmcache with minimal memory footprint
+      pip uninstall -y lmcache
+      pip install --no-cache-dir --no-build-isolation git+https://github.com/LMCache/LMCache.git
+      
+      # Start vllm
+      python -m vllm.entrypoints.openai.api_server \
+        --port=8080 \
+        --model=s3://genai-models-000474600478-us-east-1/mistral-7b-v0-3/ \
+        --load-format=runai_streamer \
+        --model-loader-extra-config='{"concurrency":16}' \
+        --tokenizer_mode=auto \
+        --trust-remote-code \
+        --gpu_memory_utilization=0.90 \
+        --max-model-len=4096 \
+        --tensor-parallel-size=1 \
+        --max-num-batched-tokens=16384 \
+        --max-num-seqs=78 \
+        --block-size=16 \
+        --enforce-eager \
+        --swap-space=16 \
+        --disable-custom-all-reduce \
+        --config-format=mistral \
+        --enable-auto-tool-choice \
+        --tool-call-parser=mistral \
+        --kv-transfer-config='{"kv_connector":"LMCacheConnectorV1", "kv_role":"kv_both"}'
+    env:
+    - name: CUDA_LAUNCH_BLOCKING
+      value: "1"
+    - name: PYTORCH_CUDA_ALLOC_CONF
+      value: "max_split_size_mb:512"
+    - name: VLLM_ATTENTION_BACKEND
+      value: "FLASHINFER"
+    - name: LMCACHE_CHUNK_SIZE
+      value: "256"
+    - name: LMCACHE_LOCAL_CPU
+      value: "True"
+    - name: LMCACHE_MAX_LOCAL_CPU_SIZE
+      value: "12.0"
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+      name: http
+    resources:
+      requests:
+        cpu: 6
+        memory: 32Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: 6
+        memory: 32Gi
+        nvidia.com/gpu: 1
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 120
+      periodSeconds: 30
+      timeoutSeconds: 10
+      failureThreshold: 3
+  
+  - name: test-client
+    image: python:3.11
+    command: ["/bin/bash"]
+    args: ["-c", "apt-get update && apt-get install -y man-db && pip install openai transformers && man python3 > /tmp/python-docs.txt && man bash > /tmp/bash-docs.txt && tail -f /dev/null"]
+    volumeMounts:
+    - name: test-scripts
+      mountPath: /app
+    - name: shared-data
+      mountPath: /tmp
+  
+  volumes:
+  - name: test-scripts
+    configMap:
+      name: test-scripts-v2
+  - name: shared-data
+    emptyDir: {}
