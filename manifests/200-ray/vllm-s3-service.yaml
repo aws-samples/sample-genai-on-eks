@@ -100,6 +100,16 @@ spec:
               value: "8004"
             - name: LD_LIBRARY_PATH
               value: "/home/ray/anaconda3/lib:$LD_LIBRARY_PATH"
+            livenessProbe:
+              exec:
+                command:
+                - bash
+                - -c
+                - curl -sf http://localhost:52365/api/local_raylet_healthz | grep -q success && curl -sf http://localhost:8265/api/gcs_healthz | grep -q success
+              initialDelaySeconds: 30
+              periodSeconds: 5
+              timeoutSeconds: 3
+              failureThreshold: 120
             readinessProbe:
               exec:
                 command:
