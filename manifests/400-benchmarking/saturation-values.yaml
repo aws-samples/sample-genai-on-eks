@@ -1,0 +1,56 @@
+benchmark:
+  enabled: true
+  scenario: saturation
+  target:
+    serverType: vllm
+    modelName: "s3://${S3_BUCKET_NAME}/Ministral-3-8B-Instruct-2512/"
+    baseUrl: "http://vllm-serve-svc.default.svc.cluster.local:8000"
+    tokenizerPath: "mistralai/Mistral-Nemo-Instruct-2407"
+    ignoreEos: true
+  api:
+    type: completion
+    streaming: true
+  storage:
+    s3:
+      bucketName: "${S3_BUCKET_NAME}"
+      pathPrefix: "benchmarks"
+  dependencies:
+    packages:
+      - sentencepiece
+      - protobuf
+  affinity:
+    enabled: true
+    targetLabels:
+      model: mistral
+  # Enable engine metrics collection during benchmark
+  metrics:
+    enabled: true
+    endpoint: "http://vllm-serve-svc.default.svc.cluster.local:8000/metrics"
+    interval: 5s
+    labels:
+      deployment: mistral
+      scenario: saturation
+  scenarios:
+    saturation:
+      description: "Determine maximum sustainable throughput"
+      data:
+        input:
+          mean: 512
+          stdDev: 128
+          min: 128
+          max: 2048
+        output:
+          mean: 256
+          stdDev: 64
+          min: 32
+          max: 512
+      load:
+        type: constant
+        numWorkers: 8
+        stages:
+          - rate: 5
+            duration: 60
+          - rate: 10
+            duration: 60
+          - rate: 20
+            duration: 60
