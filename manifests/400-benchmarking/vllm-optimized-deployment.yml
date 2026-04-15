@@ -1,0 +1,105 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-serve-svc
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/app-metrics: "true"
+    prometheus.io/port: "8000"
+  labels:
+    model: mistral
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+  selector:
+    model: mistral
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mistral
+  labels:
+    model: mistral
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      model: mistral
+  template:
+    metadata:
+      labels:
+        model: mistral
+    spec:
+      serviceAccountName: model-storage-sa
+      tolerations:
+        - effect: NoSchedule
+          key: nvidia.com/gpu
+          operator: Exists
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: vllm
+          image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.15.1-gpu-py312-cu129-ubuntu22.04-ec2-v1.1-soci
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--port=8000"
+            - "--model=s3://${S3_BUCKET_NAME}/Ministral-3-8B-Instruct-2512/"
+            - "--load-format=runai_streamer"
+            - '--model-loader-extra-config={"concurrency":16}'
+            - "--tokenizer_mode=auto"
+            - "--trust-remote-code"
+            - "--gpu_memory_utilization=0.90"
+            - "--max-model-len=4096"
+            - "--tensor-parallel-size=1"
+            - "--max-num-batched-tokens=8192"
+            - "--max-num-seqs=256"
+            - "--block-size=16"
+            - "--enforce-eager"
+            - "--swap-space=16"
+            - "--disable-custom-all-reduce"
+            - "--config-format=mistral"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser=mistral"
+            - "--enable-prefix-caching"
+          env:
+            - name: CUDA_LAUNCH_BLOCKING
+              value: "0"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "max_split_size_mb:512"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASHINFER"
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+              name: http
+          resources:
+            requests:
+              cpu: 6
+              memory: 32Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: 6
+              memory: 32Gi
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
