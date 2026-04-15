@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-service
+  labels:
+    app: rag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-service
+  template:
+    metadata:
+      labels:
+        app: rag-service
+    spec:
+      serviceAccountName: s3-access-sa    # Must have S3 Vectors permissions via IRSA
+      containers:
+        - name: rag-service
+          image: python:3.11-slim
+          command: ["/bin/sh"]
+          args:
+          - -c
+          - |
+            pip install boto3 aiohttp uvicorn fastapi sentence_transformers && python /app/rag_serve.py
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ACCOUNT_ID
+              value: "${ACCOUNT_ID}"
+            - name: S3_VECTOR_BUCKET_NAME
+              value: "${S3_VECTOR_BUCKET_NAME}"
+            - name: S3_VECTOR_INDEX_NAME
+              value: "${S3_VECTOR_INDEX_NAME}"
+            - name: MODEL_ID
+              value: "${MODEL_ID}"
+            - name: MODEL_ENDPOINT
+              value: "${MODEL_ENDPOINT}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: rag-script
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8080
+            initialDelaySeconds: 300
+            periodSeconds: 30
+      volumes:
+        - name: rag-script
+          configMap:
+            name: rag-serve-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-service
+spec:
+  selector:
+    app: rag-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
