@@ -24,7 +24,7 @@ spec:
           - |
             pip install boto3 aiohttp uvicorn fastapi sentence_transformers && python /app/rag_serve.py
           ports:
-            - containerPort: 8000
+            - containerPort: 8080
           env:
             - name: ACCOUNT_ID
               value: "${ACCOUNT_ID}"
