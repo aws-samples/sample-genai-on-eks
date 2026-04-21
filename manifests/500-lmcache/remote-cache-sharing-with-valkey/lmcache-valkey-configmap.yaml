@@ -1,0 +1,1001 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valkey-cm
+data:
+  query-twice.py: |
+    import time
+    from openai import OpenAI
+    from transformers import AutoTokenizer
+    
+    client = OpenAI(
+        api_key="dummy-key",
+        base_url="http://localhost:8080/v1"
+    )
+    
+    models = client.models.list()
+    model = models.data[0].id
+    
+    # Read the static documentation files mounted from ConfigMap - target ~3500 tokens
+    with open("/app/python-docs.txt", "r") as f:
+        python_docs = f.read()[:16000]  # ~3200 tokens + question = ~3500 total
+    
+    with open("/app/bash-docs.txt", "r") as f:
+        bash_docs = f.read()[:16000]  # ~3200 tokens + question = ~3500 total
+    
+    # Create contexts with 90% overlap
+    split_point = int(len(python_docs) * 0.9)
+    first_90_percent = python_docs[:split_point]
+    
+    # Get 10% length from bash docs
+    bash_10_percent_length = len(python_docs) - split_point
+    bash_replacement = bash_docs[:bash_10_percent_length]
+    
+    # Create two contexts
+    cold_context = python_docs
+    warm_context = first_90_percent + bash_replacement
+    
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
+    question = "Summarize the key concepts in 2 sentences."
+    
+    def query_and_measure_ttft(context, label):
+        prompt = f"{context}\n\n{question}"
+        print(f"Number of tokens in {label} prompt: {len(tokenizer.encode(prompt))}")
+    
+        start = time.perf_counter()
+        ttft = None
+    
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            temperature=0.7,
+            stream=True,
+        )
+    
+        for chunk in chat_completion:
+            chunk_message = chunk.choices[0].delta.content
+            if chunk_message is not None:
+                if ttft is None:
+                    ttft = time.perf_counter()
+                print(chunk_message, end="", flush=True)
+    
+        print("\n")
+        return ttft - start
+    
+    print("Querying vLLM server with cold LMCache CPU Offload")
+    cold_ttft = query_and_measure_ttft(cold_context, "cold")
+    print(f"Cold TTFT: {cold_ttft:.3f} seconds")
+    
+    print("\nQuerying vLLM server with warm LMCache CPU Offload (90% same content)")
+    warm_ttft = query_and_measure_ttft(warm_context, "warm")
+    print(f"Warm TTFT: {warm_ttft:.3f} seconds")
+    
+    print(f"\nTTFT Improvement: {(cold_ttft - warm_ttft):.3f} seconds ({(cold_ttft/warm_ttft):.1f}x faster)")
+    
+  python-docs.txt: |
+    
+    ============================================================
+    os
+    ============================================================
+    Python Library Documentation: module os
+    
+    NAME
+        os - OS routines for NT or Posix depending on what system we're on.
+    
+    DESCRIPTION
+        This exports:
+          - all functions from posix or nt, e.g. unlink, stat, etc.
+          - os.path is either posixpath or ntpath
+          - os.name is either 'posix' or 'nt'
+          - os.curdir is a string representing the current directory (always '.')
+          - os.pardir is a string representing the parent directory (always '..')
+          - os.sep is the (or a most common) pathname separator ('/' or '\\')
+          - os.extsep is the extension separator (always '.')
+          - os.altsep is the alternate pathname separator (None or '/')
+          - os.pathsep is the component separator used in $PATH etc
+          - os.linesep is the line separator in text files ('\r' or '\n' or '\r\n')
+          - os.defpath is the default search path for executables
+          - os.devnull is the file path of the null device ('/dev/null', etc.)
+    
+        Programs that import and use 'os' stand a better chance of being
+        portable between different platforms.  Of course, they must then
+        only use functions that are defined by all platforms (e.g., unlink
+        and opendir), and leave all pathname manipulation to os.path
+        (e.g., split and join).
+    
+    CLASSES
+        builtins.Exception(builtins.BaseException)
+            builtins.OSError
+        builtins.object
+            posix.DirEntry
+        builtins.tuple(builtins.object)
+            stat_result
+            statvfs_result
+            terminal_size
+            posix.times_result
+            posix.uname_result
+    
+        class DirEntry(builtins.object)
+         |  Methods defined here:
+         |
+         |  __fspath__(self, /)
+         |      Returns the path for the entry.
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  inode(self, /)
+         |      Return inode of the entry; cached per entry.
+         |
+         |  is_dir(self, /, *, follow_symlinks=True)
+         |      Return True if the entry is a directory; cached per entry.
+         |
+         |  is_file(self, /, *, follow_symlinks=True)
+         |      Return True if the entry is a file; cached per entry.
+         |
+         |  is_junction(self, /)
+         |      Return True if the entry is a junction; cached per entry.
+         |
+         |  is_symlink(self, /)
+         |      Return True if the entry is a symbolic link; cached per entry.
+         |
+         |  stat(self, /, *, follow_symlinks=True)
+         |      Return stat_result object for the entry; cached per entry.
+         |
+         |  ----------------------------------------------------------------------
+         |  Class methods defined here:
+         |
+         |  __class_getitem__(...)
+         |      See PEP 585
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors defined here:
+         |
+         |  name
+         |      the entry's base filename, relative to scandir() "path" argument
+         |
+         |  path
+         |      the entry's full path name; equivalent to os.path.join(scandir_path, entry.name)
+    
+        error = class OSError(Exception)
+         |  Base class for I/O related errors.
+         |
+         |  Method resolution order:
+         |      OSError
+         |      Exception
+         |      BaseException
+         |      object
+         |
+         |  Built-in subclasses:
+         |      BlockingIOError
+         |      ChildProcessError
+         |      ConnectionError
+         |      FileExistsError
+         |      ... and 7 other subclasses
+         |
+         |  Methods defined here:
+         |
+         |  __init__(self, /, *args, **kwargs)
+         |      Initialize self.  See help(type(self)) for accurate signature.
+         |
+         |  __reduce__(...)
+         |      Helper for pickle.
+         |
+         |  __str__(self, /)
+         |      Return str(self).
+         |
+         |  ----------------------------------------------------------------------
+         |  Static methods defined here:
+         |
+         |  __new__(*args, **kwargs)
+         |      Create and return a new object.  See help(type) for accurate signature.
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors defined here:
+         |
+         |  characters_written
+         |
+         |  errno
+         |      POSIX exception code
+         |
+         |  filename
+         |      exception filename
+         |
+         |  filename2
+         |      second exception filename
+         |
+         |  strerror
+         |      exception strerror
+         |
+         |  ----------------------------------------------------------------------
+         |  Methods inherited from BaseException:
+         |
+         |  __getattribute__(self, name, /)
+         |      Return getattr(self, name).
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  __setstate__(...)
+         |
+         |  add_note(...)
+         |      Exception.add_note(note) --
+         |      add a note to the exception
+         |
+         |  with_traceback(...)
+         |      Exception.with_traceback(tb) --
+         |      set self.__traceback__ to tb and return self.
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors inherited from BaseException:
+         |
+         |  __cause__
+         |      exception cause
+         |
+         |  __context__
+         |      exception context
+         |
+         |  __dict__
+         |
+         |  __suppress_context__
+         |
+         |  __traceback__
+         |
+         |  args
+    
+        class stat_result(builtins.tuple)
+         |  stat_result(iterable=(), /)
+         |
+         |  stat_result: Result from stat, fstat, or lstat.
+         |
+         |  This object may be accessed either as a tuple of
+         |    (mode, ino, dev, nlink, uid, gid, size, atime, mtime, ctime)
+         |  or via the attributes st_mode, st_ino, st_dev, st_nlink, st_uid, and so on.
+         |
+         |  Posix/windows: If your platform supports st_blksize, st_blocks, st_rdev,
+         |  or st_flags, they are available as attributes only.
+         |
+         |  See os.stat for more information.
+         |
+         |  Method resolution order:
+         |      stat_result
+         |      builtins.tuple
+         |      builtins.object
+         |
+         |  Methods defined here:
+         |
+         |  __reduce__(...)
+         |      Helper for pickle.
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  ----------------------------------------------------------------------
+         |  Static methods defined here:
+         |
+         |  __new__(*args, **kwargs)
+         |      Create and return a new object.  See help(type) for accurate signature.
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors defined here:
+         |
+         |  st_atime
+         |      time of last access
+         |
+         |  st_atime_ns
+         |      time of last access in nanoseconds
+         |
+         |  st_birthtime
+         |      time of creation
+         |
+         |  st_blksize
+         |      blocksize for filesystem I/O
+         |
+         |  st_blocks
+         |      number of blocks allocated
+         |
+         |  st_ctime
+         |      time of last change
+         |
+         |  st_ctime_ns
+         |      time of last change in nanoseconds
+         |
+         |  st_dev
+         |      device
+         |
+         |  st_flags
+         |      user defined flags for file
+         |
+         |  st_gen
+         |      generation number
+         |
+         |  st_gid
+         |      group ID of owner
+         |
+         |  st_ino
+         |      inode
+         |
+         |  st_mode
+         |      protection bits
+         |
+         |  st_mtime
+         |      time of last modification
+         |
+         |  st_mtime_ns
+         |      time of last modification in nanoseconds
+         |
+         |  st_nlink
+         |      number of hard links
+         |
+         |  st_rdev
+         |      device type (if inode device)
+         |
+         |  st_size
+         |      total size, in bytes
+         |
+         |  st_uid
+         |      user ID of owner
+         |
+         |  ----------------------------------------------------------------------
+         |  Data and other attributes defined here:
+         |
+         |  __match_args__ = ('st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_uid',...
+         |
+         |  n_fields = 22
+         |
+         |  n_sequence_fields = 10
+         |
+         |  n_unnamed_fields = 3
+         |
+         |  ----------------------------------------------------------------------
+         |  Methods inherited from builtins.tuple:
+         |
+         |  __add__(self, value, /)
+         |      Return self+value.
+         |
+         |  __contains__(self, key, /)
+         |      Return bool(key in self).
+         |
+         |  __eq__(self, value, /)
+         |      Return self==value.
+         |
+         |  __ge__(self, value, /)
+         |      Return self>=value.
+         |
+         |  __getattribute__(self, name, /)
+         |      Return getattr(self, name).
+         |
+         |  __getitem__(self, key, /)
+         |      Return self[key].
+         |
+         |  __getnewargs__(self, /)
+         |
+         |  __gt__(self, value, /)
+         |      Return self>value.
+         |
+         |  __hash__(self, /)
+         |      Return hash(self).
+         |
+         |  __iter__(self, /)
+         |      Implement iter(self).
+         |
+         |  __le__(self, value, /)
+         |      Return self<=value.
+         |
+         |  __len__(self, /)
+         |      Return len(self).
+         |
+         |  __lt__(self, value, /)
+         |      Return self<value.
+         |
+         |  __mul__(self, value, /)
+         |      Return self*value.
+         |
+         |  __ne__(self, value, /)
+         |      Return self!=value.
+         |
+         |  __rmul__(self, value, /)
+         |      Return value*self.
+         |
+         |  count(self, value, /)
+         |      Return number of occurrences of value.
+         |
+         |  index(self, value, start=0, stop=9223372036854775807, /)
+         |      Return first index of value.
+         |
+         |      Raises ValueError if the value is not present.
+         |
+         |  ----------------------------------------------------------------------
+         |  Class methods inherited from builtins.tuple:
+         |
+         |  __class_getitem__(...)
+         |      See PEP 585
+    
+        class statvfs_result(builtins.tuple)
+         |  statvfs_result(iterable=(), /)
+         |
+         |  statvfs_result: Result from statvfs or fstatvfs.
+         |
+         |  This object may be accessed either as a tuple of
+         |    (bsize, frsize, blocks, bfree, bavail, files, ffree, favail, flag, namemax),
+         |  or via the attributes f_bsize, f_frsize, f_blocks, f_bfree, and so on.
+         |
+         |  See os.statvfs for more information.
+         |
+         |  Method resolution order:
+         |      statvfs_result
+         |      builtins.tuple
+         |      builtins.object
+         |
+         |  Methods defined here:
+         |
+         |  __reduce__(...)
+         |      Helper for pickle.
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  ----------------------------------------------------------------------
+         |  Static methods defined here:
+         |
+         |  __new__(*args, **kwargs)
+         |      Create and return a new object.  See help(type) for accurate signature.
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors defined here:
+         |
+         |  f_bavail
+         |
+         |  f_bfree
+         |
+         |  f_blocks
+         |
+         |  f_bsize
+         |
+         |  f_favail
+         |
+         |  f_ffree
+         |
+         |  f_files
+         |
+         |  f_flag
+         |
+         |  f_frsize
+         |
+         |  f_fsid
+         |
+         |  f_namemax
+         |
+         |  ----------------------------------------------------------------------
+         |  Data and other attributes defined here:
+         |
+         |  __match_args__ = ('f_bsize', 'f_frsize', 'f_blocks', 'f_bfree', 'f_bav...
+         |
+         |  n_fields = 11
+         |
+         |  n_sequence_fields = 10
+         |
+         |  n_unnamed_fields = 0
+         |
+         |  ----------------------------------------------------------------------
+         |  Methods inherited from builtins.tuple:
+         |
+         |  __add__(self, value, /)
+         |      Return self+value.
+         |
+         |  __contains__(self, key, /)
+         |      Return bool(key in self).
+         |
+         |  __eq__(self, value, /)
+         |      Return self==value.
+         |
+         |  __ge__(self, value, /)
+         |      Return self>=value.
+         |
+         |  __getattribute__(self, name, /)
+         |      Return getattr(self, name).
+         |
+         |  __getitem__(self, key, /)
+         |      Return self[key].
+         |
+         |  __getnewargs__(self, /)
+         |
+         |  __gt__(self, value, /)
+         |      Return self>value.
+         |
+         |  __hash__(self, /)
+         |      Return hash(self).
+         |
+         |  __iter__(self, /)
+         |      Implement iter(self).
+         |
+         |  __le__(self, value, /)
+         |      Return self<=value.
+         |
+         |  __len__(self, /)
+         |      Return len(self).
+         |
+         |  __lt__(self, value, /)
+         |      Return self<value.
+         |
+         |  __mul__(self, value, /)
+         |      Return self*value.
+         |
+         |  __ne__(self, value, /)
+         |      Return self!=value.
+         |
+         |  __rmul__(self, value, /)
+         |      Return value*self.
+         |
+         |  count(self, value, /)
+         |      Return number of occurrences of value.
+         |
+         |  index(self, value, start=0, stop=9223372036854775807, /)
+         |      Return first index of value.
+         |
+         |      Raises ValueError if the value is not present.
+         |
+         |  ----------------------------------------------------------------------
+         |  Class methods inherited from builtins.tuple:
+         |
+         |  __class_getitem__(...)
+         |      See PEP 585
+    
+        class terminal_size(builtins.tuple)
+         |  terminal_size(iterable=(), /)
+         |
+         |  A tuple of (columns, lines) for holding terminal window size
+         |
+         |  Method resolution order:
+         |      terminal_size
+         |      builtins.tuple
+         |      builtins.object
+         |
+         |  Methods defined here:
+         |
+         |  __reduce__(...)
+         |      Helper for pickle.
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  ----------------------------------------------------------------------
+         |  Static methods defined here:
+         |
+         |  __new__(*args, **kwargs)
+         |      Create and return a new object.  See help(type) for accurate signature.
+         |
+         |  ----------------------------------------------------------------------
+         |  Data descriptors defined here:
+         |
+         |  columns
+         |      width of the terminal window in characters
+         |
+         |  lines
+         |      height of the terminal window in characters
+         |
+         |  ----------------------------------------------------------------------
+         |  Data and other attributes defined here:
+         |
+         |  __match_args__ = ('columns', 'lines')
+         |
+         |  n_fields = 2
+         |
+         |  n_sequence_fields = 2
+         |
+         |  n_unnamed_fields = 0
+         |
+         |  ----------------------------------------------------------------------
+         |  Methods inherited from builtins.tuple:
+         |
+         |  __add__(self, value, /)
+         |      Return self+value.
+         |
+         |  __contains__(self, key, /)
+         |      Return bool(key in self).
+         |
+         |  __eq__(self, value, /)
+         |      Return self==value.
+         |
+         |  __ge__(self, value, /)
+         |      Return self>=value.
+         |
+         |  __getattribute__(self, name, /)
+         |      Return getattr(self, name).
+         |
+         |  __getitem__(self, key, /)
+         |      Return self[key].
+         |
+         |  __getnewargs__(self, /)
+         |
+         |  __gt__(self, value, /)
+         |      Return self>value.
+         |
+         |  __hash__(self, /)
+         |      Return hash(self).
+         |
+         |  __iter__(self, /)
+         |      Implement iter(self).
+         |
+         |  __le__(self, value, /)
+         |      Return self<=value.
+         |
+         |  __len__(self, /)
+         |      Return len(self).
+         |
+         |  __lt__(self, value, /)
+         |      Return self<value.
+         |
+         |  __mul__(self, value, /)
+         |      Return self*value.
+         |
+         |  __ne__(self, value, /)
+         |      Return self!=value.
+         |
+         |  __rmul__(self, value, /)
+         |      Return value*self.
+         |
+         |  count(self, value, /)
+         |      Return number of occurrences of value.
+         |
+         |  index(self, value, start=0, stop=9223372036854775807, /)
+         |      Return first index of value.
+         |
+         |      Raises ValueError if the value is not present.
+         |
+         |  ----------------------------------------------------------------------
+         |  Class methods inherited from builtins.tuple:
+         |
+         |  __class_getitem__(...)
+         |      See PEP 585
+    
+        class times_result(builtins.tuple)
+         |  times_result(iterable=(), /)
+         |
+         |  times_result: Result from os.times().
+         |
+         |  This object may be accessed either as a tuple of
+         |    (user, system, children_user, children_system, elapsed),
+         |  or via the attributes user, system, children_user, children_system,
+         |  and elapsed.
+         |
+         |  See os.times for more information.
+         |
+         |  Method resolution order:
+         |      times_result
+         |      builtins.tuple
+         |      builtins.object
+         |
+         |  Methods defined here:
+         |
+         |  __reduce__(...)
+         |      Helper for pickle.
+         |
+         |  __repr__(self, /)
+         |      Return repr(self).
+         |
+         |  ----------------------------------------------------------------------
+         |  Static methods defined here:
+         |
+         |  __new__(*args, **kwargs)
+         |      Create and return a new object.  See help(type) for accurate signature.
+         |
+         |  ----------------------------------------------------------------------
+         |  Dat
+  bash-docs.txt: |
+    BASH(1) 		    General Commands Manual		       BASH(1)
+    
+    NNAAMMEE
+           bash - GNU Bourne-Again SHell
+    
+    SSYYNNOOPPSSIISS
+           bbaasshh [options] [command_string | file]
+    
+    CCOOPPYYRRIIGGHHTT
+           Bash is Copyright (C) 1989-2025 by the Free Software Foundation, Inc.
+    
+    DDEESSCCRRIIPPTTIIOONN
+           BBaasshh is a command language interpreter that executes commands read from
+           the standard input, from a string, or from a file.  It is a
+           reimplementation and extension of the Bourne shell, the historical Unix
+           command language interpreter.  BBaasshh also incorporates useful features
+           from the _K_o_r_n and _C shells (kksshh and ccsshh).
+    
+           POSIX is the name for a family of computing standards based on Unix.
+           BBaasshh is intended to be a conformant implementation of the Shell and
+           Utilities portion of the IEEE POSIX specification (IEEE Standard
+           1003.1).  BBaasshh POSIX mode (hereafter referred to as _p_o_s_i_x _m_o_d_e) changes
+           the shell's behavior where its default operation differs from the
+           standard to strictly conform to the standard.  See SSEEEE AALLSSOO below for a
+           reference to a document that details how posix mode affects bbaasshh's
+           behavior.  BBaasshh can be configured to be POSIX-conformant by default.
+    
+    OOPPTTIIOONNSS
+           All of the single-character shell options documented in the description
+           of the sseett builtin command, including --oo, can be used as options when
+           the shell is invoked.  In addition, bbaasshh interprets the following
+           options when it is invoked:
+    
+           --cc	   If the --cc option is present, then commands are read from the
+    		 first non-option argument _c_o_m_m_a_n_d___s_t_r_i_n_g.  If there are
+    		 arguments after the _c_o_m_m_a_n_d___s_t_r_i_n_g, the first argument is
+    		 assigned to $$00 and any remaining arguments are assigned to
+    		 the positional parameters.  The assignment to $$00 sets the
+    		 name of the shell, which is used in warning and error
+    		 messages.
+    
+           --ii	   If the --ii option is present, the shell is _i_n_t_e_r_a_c_t_i_v_e.
+    
+           --ll	   Make bbaasshh act as if it had been invoked as a login shell (see
+    		 IINNVVOOCCAATTIIOONN below).
+    
+           --rr	   If the --rr option is present, the shell becomes _r_e_s_t_r_i_c_t_e_d
+    		 (see RREESSTTRRIICCTTEEDD SSHHEELLLL below).
+    
+           --ss	   If the --ss option is present, or if no arguments remain after
+    		 option processing, the shell reads commands from the standard
+    		 input.  This option allows the positional parameters to be
+    		 set when invoking an interactive shell or when reading input
+    		 through a pipe.
+    
+           --DD	   Print a list of all double-quoted strings preceded by $$ on
+    		 the standard output.  These are the strings that are subject
+    		 to language translation when the current locale is not CC or
+    		 PPOOSSIIXX.  This implies the --nn option; no commands will be
+    		 executed.
+    
+           [[--++]]OO [[_s_h_o_p_t___o_p_t_i_o_n]]
+    		 _s_h_o_p_t___o_p_t_i_o_n is one of the shell options accepted by the
+    		 sshhoopptt builtin (see SSHHEELLLL BBUUIILLTTIINN CCOOMMMMAANNDDSS below).  If
+    		 _s_h_o_p_t___o_p_t_i_o_n is present, --OO sets the value of that option; ++OO
+    		 unsets it.  If _s_h_o_p_t___o_p_t_i_o_n is not supplied, bbaasshh prints the
+    		 names and values of the shell options accepted by sshhoopptt on
+    		 the standard output.  If the invocation option is ++OO, the
+    		 output is displayed in a format that may be reused as input.
+    
+           ----	   A ---- signals the end of options and disables further option
+    		 processing.  Any arguments after the ---- are treated as a
+    		 shell script filename (see below) and arguments passed to
+    		 that script.  An argument of -- is equivalent to ----.
+    
+           BBaasshh also interprets a number of multi-character options.  These
+           options must appear on the command line before the single-character
+           options to be recognized.
+    
+           ----ddeebbuuggggeerr
+    	      Arrange for the debugger profile to be executed before the shell
+    	      starts.  Turns on extended debugging mode (see the description
+    	      of the eexxttddeebbuugg option to the sshhoopptt builtin below).
+    
+           ----dduummpp--ppoo--ssttrriinnggss
+    	      Equivalent to --DD, but the output is in the GNU _g_e_t_t_e_x_t “po”
+    	      (portable object) file format.
+    
+           ----dduummpp--ssttrriinnggss
+    	      Equivalent to --DD.
+    
+           ----hheellpp Display a usage message on standard output and exit
+    	      successfully.
+    
+           ----iinniitt--ffiillee _f_i_l_e
+           ----rrccffiillee _f_i_l_e
+    	      Execute commands from _f_i_l_e instead of the standard personal
+    	      initialization file _~_/_._b_a_s_h_r_c if the shell is interactive (see
+    	      IINNVVOOCCAATTIIOONN below).
+    
+           ----llooggiinn
+    	      Equivalent to --ll.
+    
+           ----nnooeeddiittiinngg
+    	      Do not use the GNU rreeaaddlliinnee library to read command lines when
+    	      the shell is interactive.
+    
+           ----nnoopprrooffiillee
+    	      Do not read either the system-wide startup file _/_e_t_c_/_p_r_o_f_i_l_e or
+    	      any of the personal initialization files _~_/_._b_a_s_h___p_r_o_f_i_l_e,
+    	      _~_/_._b_a_s_h___l_o_g_i_n, or _~_/_._p_r_o_f_i_l_e.  By default, bbaasshh reads these
+    	      files when it is invoked as a login shell (see IINNVVOOCCAATTIIOONN
+    	      below).
+    
+           ----nnoorrcc Do not read and execute the personal initialization file
+    	      _~_/_._b_a_s_h_r_c if the shell is interactive.  This option is on by
+    	      default if the shell is invoked as sshh.
+    
+           ----ppoossiixx
+    	      Enable posix mode; change the behavior of bbaasshh where the default
+    	      operation differs from the POSIX standard to match the standard.
+    
+           ----rreessttrriicctteedd
+    	      The shell becomes restricted (see RREESSTTRRIICCTTEEDD SSHHEELLLL below).
+    
+           ----vveerrbboossee
+    	      Equivalent to --vv.
+    
+           ----vveerrssiioonn
+    	      Show version information for this instance of bbaasshh on the
+    	      standard output and exit successfully.
+    
+    AARRGGUUMMEENNTTSS
+           If arguments remain after option processing, and neither the --cc nor the
+           --ss option has been supplied, the first argument is treated as the name
+           of a file containing shell commands (a _s_h_e_l_l _s_c_r_i_p_t).  When bbaasshh is
+           invoked in this fashion, $$00 is set to the name of the file, and the
+           positional parameters are set to the remaining arguments.  BBaasshh reads
+           and executes commands from this file, then exits.  BBaasshh's exit status
+           is the exit status of the last command executed in the script.  If no
+           commands are executed, the exit status is 0.  BBaasshh first attempts to
+           open the file in the current directory, and, if no file is found,
+           searches the directories in PPAATTHH for the script.
+    
+    IINNVVOOCCAATTIIOONN
+           A _l_o_g_i_n _s_h_e_l_l is one whose first character of argument zero is a --, or
+           one started with the ----llooggiinn option.
+    
+           An _i_n_t_e_r_a_c_t_i_v_e _s_h_e_l_l is one started without non-option arguments
+           (unless --ss is specified) and without the --cc option, and whose standard
+           input and standard error are both connected to terminals (as determined
+           by _i_s_a_t_t_y(3)), or one started with the --ii option.  BBaasshh sets PPSS11 and $$--
+           includes ii if the shell is interactive, so a shell script or a startup
+           file can test this state.
+    
+           The following paragraphs describe how bbaasshh executes its startup files.
+           If any of the files exist but cannot be read, bbaasshh reports an error.
+           Tildes are expanded in filenames as described below under TTiillddee
+           EExxppaannssiioonn in the EEXXPPAANNSSIIOONN section.
+    
+           When bbaasshh is invoked as an interactive login shell, or as a non-
+           interactive shell with the ----llooggiinn option, it first reads and executes
+           commands from the file _/_e_t_c_/_p_r_o_f_i_l_e, if that file exists.  After
+           reading that file, it looks for _~_/_._b_a_s_h___p_r_o_f_i_l_e, _~_/_._b_a_s_h___l_o_g_i_n, and
+           _~_/_._p_r_o_f_i_l_e, in that order, and reads and executes commands from the
+           first one that exists and is readable.  The ----nnoopprrooffiillee option may be
+           used when the shell is started to inhibit this behavior.
+    
+           When an interactive login shell exits, or a non-interactive login shell
+           executes the eexxiitt builtin command, bbaasshh reads and executes commands
+           from the file _~_/_._b_a_s_h___l_o_g_o_u_t, if it exists.
+    
+           When an interactive shell that is not a login shell is started, bbaasshh
+           reads and executes commands from _~_/_._b_a_s_h_r_c, if that file exists.  The
+           ----nnoorrcc option inhibits this behavior.  The ----rrccffiillee _f_i_l_e option causes
+           bbaasshh to use _f_i_l_e instead of _~_/_._b_a_s_h_r_c.
+    
+           When bbaasshh is started non-interactively, to run a shell script, for
+           example, it looks for the variable BBAASSHH__EENNVV in the environment, expands
+           its value if it appears there, and uses the expanded value as the name
+           of a file to read and execute.  BBaasshh behaves as if the following
+           command were executed:
+    
+    	      if [ -n "$BASH_ENV" ]; then . "$BASH_ENV"; fi
+    
+           but does not use the value of the PPAATTHH variable to search for the
+           filename.
+    
+           If bbaasshh is invoked with the name sshh, it tries to mimic the startup
+           behavior of historical versions of sshh as closely as possible, while
+           conforming to the POSIX standard as well.  When invoked as an
+           interactive login shell, or a non-interactive shell with the ----llooggiinn
+           option, it first attempts to read and execute commands from
+           _/_e_t_c_/_p_r_o_f_i_l_e and _~_/_._p_r_o_f_i_l_e, in that order.  The ----nnoopprrooffiillee option
+           inhibits this behavior.	When invoked as an interactive shell with the
+           name sshh, bbaasshh looks for the variable EENNVV, expands its value if it is
+           defined, and uses the expanded value as the name of a file to read and
+           execute.  Since a shell invoked as sshh does not attempt to read and
+           execute commands from any other startup files, the ----rrccffiillee option has
+           no effect.  A non-interactive shell invoked with the name sshh does not
+           attempt to read any other startup files.
+    
+           When invoked as sshh, bbaasshh enters posix mode after reading the startup
+           files.
+    
+           When bbaasshh is started in posix mode, as with the ----ppoossiixx command line
+           option, it follows the POSIX standard for startup files.  In this mode,
+           interactive shells expand the EENNVV variable and read and execute
+           commands from the file whose name is the expanded value.  No other
+           startup files are read.
+    
+           BBaasshh attempts to determine when it is being run with its standard input
+           connected to a network connection, as when executed by the historical
+           and rarely-seen remote shell daemon, usually _r_s_h_d, or the secure shell
+           daemon _s_s_h_d.  If bbaasshh determines it is being run non-interactively in
+           this fashion, it reads and executes commands from _~_/_._b_a_s_h_r_c, if that
+           file exists and is readable.  BBaasshh does not read this file if invoked
+           as sshh.  The ----nnoorrcc option inhibits this behavior, and the ----rrccffiillee
+           option makes bbaasshh use a different file instead of _~_/_._b_a_s_h_r_c, but
+           neither _r_s_h_d nor _s_s_h_d generally invoke the shell with those options or
+           allow them to be specified.
+    
+           If the shell is started with the effective user (group) id not equal to
+           the real user (group) id, and the --pp option is not supplied, no startup
+           files are read, shell functions are not inherited from the environment,
+           the SSHHEELLLLOOPPTTSS, BBAASSHHOOPPTTSS, CCDDPPAATTHH, and GGLLOOBBIIGGNNOORREE variables, if they
+           appear in the environment, are ignored, and the effective user id is
+           set to the real user id.  If the --pp option is supplied at invocation,
+           the startup behavior is the same, but the effective user id is not
+           reset.
+    
+    DDEEFFIINNIITTIIOONNSS
+           The following definitions are used throughout the rest of this
+           document.
+           bbllaannkk  A space or tab.
+           wwhhiitteessppaaccee
+    	      A character belonging to the ssppaaccee character class in the
+    	      current locale, or for which _i_s_s_p_a_c_e(3) returns true.
+           wwoorrdd   A sequence of characters considered as a single unit by the
+    	      shell.  Also known as a ttookkeenn.
+           nnaammee   A _w_o_r_d consisting only of alphanumeric characters and
+    	      underscores, and beginning with an alphabetic character or an
+    	      underscore.  Also referred to as an iiddeennttiiffiieerr.
+           mmeettaacchhaarraacctteerr
+    	      A character that, when unquoted, separates words.  One of the
+    	      following:
+    	      ||  && ;; (( )) << >> ssppaaccee ttaabb nneewwlliinnee
+           ccoonnttrrooll ooppeerraattoorr
+    	      A _t_o_k_e_n that performs a control function.  It is one of the
+    	      following symbols:
+    	      |||| && &&&& ;; ;;;; ;;&& ;;;;&& (( )) || ||&& <<nneewwlliinnee>>
+    
+    RREESSEERRVVEEDD WWOORRDDSS
+           _R_e_s_e_r_v_e_d _w_o_r_d_s are words that have a special meaning to the shell.	The
+           following words are recognized as reserved when unquoted and either the
+           first word of a command (see SSHHEELLLL GGRRAAMMMMAARR below), the third word of a
+           ccaassee or sseelleecctt command (only iinn is valid), or the third word of a ffoorr
+           command (only iinn and ddoo are valid):
+    
+           !! ccaassee  ccoopprroocc  ddoo ddoonnee eelliiff eellssee eessaacc ffii ffoorr ffuunnccttiioonn iiff iinn sseelleecctt
+           tthheenn uunnttiill wwhhiillee {{ }} ttiimmee [[[[ ]]]]
+    
+    SSHHEELLLL GGRRAAMMMMAARR
+           This section describes the syntax of the various forms of shell
+           commands.
+    
+       SSiimmppllee CCoommmmaannddss
+           A _s_i_m_p_l_e _c_o_m_m_a_n_d is a sequence of optional variable assignments
+           followed by bbllaannkk-separated words and redirections, and terminated by a
+           _c_o_n_t_r_o_l _o_p_e_r_a_t_o_r.  The first word specifies the command to be executed,
+           and is passed as argument zero.	The remaining words are passed as
+           arguments to the invoked command.
+    
+           The return value of a _s_i_m_p_l_e _c_o_m_m_a_n_d is its exit status, or 128+_n if
+           the command is terminated by signal _n.
+    
+       PPiippeelliinneess
+           A _p_i_p_e_l_i_n_e is a sequence of one or more commands separated by one of
+           the control operators || or ||&&.  The format for a pipeline is:
+    
+    	      [ttiimmee [--pp]] [ ! ] _c_o_m_m_a_n_d_1 [ [||⎪||&&] _c_o_m_m_a_n_d_2 ... ]
+    
+           The standard output of _c_o_m_m_a_n_d_1 is connected via a pipe to the standard
+           input of _c_o_m_m_a_n_d_2.  This connection is performed before any
+           redirections specified by the _c_o_m_m_a_n_d_1(see RREEDDIIRREECCTTIIOONN below).  If ||&&
+           is the pipeline operator, _c_o_m_m_a_n_d_1's standard error, in addition to its
+           standard output, is connected to _c_o_m_m_a_n_d_2's standard input through the
+           pipe; it is shorthand for 22>>&&11 ||.  This implicit redirection of the
+           standard error to the standard output is performed after any
+           redirections specified by _c_o_m_m_a_n_d_1.
+    
+           The return status of a pipeline is the exit status of the last command,
+           unless the ppiippeeffaaiill option is enabled.  If ppiippeeffaaiill is enabled, the
+           pipeline's return status is the value of the last (rightmost) command
+           to exit with a non-zero status, or zero if all commands exit
+           successfully.  If the reserved word !!  precedes a pipeline, the exit
+           status of that pipeline is the logical negation of the exit status as
+           described above.  If a pipeline is executed synchronously, the shell
+           waits for all commands in the pipeline to terminate before returning a
+           value.
+    
+           If the ttiimmee reserved word precedes a pipeline, the shell reports the
+           elapsed as well as user and system time consumed by its execution when
+           the pipeline terminates.  The --pp option changes the output format to
+           that specified by POSIX.  When the shell is in posix mode, it does not
+           recognize ttiimmee as a reserved word if the next token begins with a “-”.
+           The value of the TTIIMMEEFFOORRMMAATT variable is a format string that specifies
+           how the timing information should be displayed; see the description of
+           TTIIMMEEFFOORRMMAATT below under SShheellll VVaarriiaabblleess.
+    
+           When the shell is in posix mode, ttiimmee may appear by itself as the only
+           word in a simple command.  In this case, the shell displays the total
+           user and system time consumed by the shell and its children.  The
+           TTIIMMEEFFOORRMMAATT variable specifies the format of the time information.
+    
+         
