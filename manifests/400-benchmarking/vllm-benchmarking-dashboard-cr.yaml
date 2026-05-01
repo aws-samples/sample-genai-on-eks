@@ -1,0 +1,14 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: vllm-benchmarking-dashboard
+  namespace: monitoring
+  labels:
+    dashboards: "external-grafana"
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "external-grafana"
+  configMapRef:
+    name: vllm-benchmarking-dashboard-config
+    key: vllm-benchmarking-dashboard.json

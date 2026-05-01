@@ -1,0 +1,44 @@
+benchmark:
+  enabled: true
+  scenario: baseline
+  target:
+    serverType: vllm
+    modelName: "s3://${S3_BUCKET_NAME}/Ministral-3-8B-Instruct-2512/"
+    baseUrl: "http://vllm-serve-svc.default.svc.cluster.local:8000"
+    tokenizerPath: "mistralai/Mistral-Nemo-Instruct-2407"
+    ignoreEos: true
+  api:
+    type: completion
+    streaming: true
+  storage:
+    s3:
+      bucketName: "${S3_BUCKET_NAME}"
+      pathPrefix: "benchmarks"
+  dependencies:
+    packages:
+      - sentencepiece
+      - protobuf
+  affinity:
+    enabled: true
+    targetLabels:
+      model: mistral
+  scenarios:
+    baseline:
+      description: "Establish optimal performance with zero contention"
+      data:
+        input:
+          mean: 512
+          stdDev: 0
+          min: 512
+          max: 512
+        output:
+          mean: 128
+          stdDev: 0
+          min: 128
+          max: 128
+      load:
+        type: constant
+        numWorkers: 4
+        stages:
+          - rate: 1
+            duration: 60
