@@ -11,7 +11,7 @@ data:
     import pandas as pd
 
     # Configure API endpoint
-    API_BASE_URL = "http://rag-service-serve-svc:8000"
+    API_BASE_URL = "http://rag-service:80"
 
     # Fixed parameters
     TOP_K = 3
@@ -33,7 +33,7 @@ data:
 
     def make_api_request(query, use_rag=True, temperature=0.7, max_tokens=512):
         """Make a request to the RAG service API"""
-        url = f"{API_BASE_URL}/"
+        url = f"{API_BASE_URL}/query"
 
         # Create payload
         payload = {
