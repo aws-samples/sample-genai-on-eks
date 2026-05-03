@@ -1,0 +1,67 @@
+{{- if .Values.benchmark.enabled }}
+{{- $scenario := index .Values.benchmark.scenarios .Values.benchmark.scenario }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "benchmark-charts.fullname" . }}-{{ .Values.benchmark.scenario }}
+  namespace: {{ .Values.benchmark.namespace }}
+  labels:
+    {{- include "benchmark-charts.labels" . | nindent 4 }}
+    app.kubernetes.io/component: benchmark
+    benchmark.scenario: {{ .Values.benchmark.scenario }}
+data:
+  config.yml: |
+    api:
+      type: {{ .Values.benchmark.api.type }}
+      streaming: {{ .Values.benchmark.api.streaming }}
+
+    data:
+      type: synthetic
+      input_distribution:
+        mean: {{ $scenario.data.input.mean }}
+        std_dev: {{ $scenario.data.input.stdDev }}
+        min: {{ $scenario.data.input.min }}
+        max: {{ $scenario.data.input.max }}
+      output_distribution:
+        mean: {{ $scenario.data.output.mean }}
+        std_dev: {{ $scenario.data.output.stdDev }}
+        min: {{ $scenario.data.output.min }}
+        max: {{ $scenario.data.output.max }}
+
+    load:
+      type: {{ $scenario.load.type }}
+      {{- if $scenario.load.stages }}
+      stages:
+        {{- range $scenario.load.stages }}
+        - rate: {{ .rate }}
+          duration: {{ .duration }}
+        {{- end }}
+      {{- else }}
+      stages: []
+      {{- end }}
+      {{- if $scenario.load.sweep }}
+      sweep:
+        type: {{ $scenario.load.sweep.type }}
+        num_requests: {{ $scenario.load.sweep.numRequests }}
+        timeout: {{ $scenario.load.sweep.timeout }}
+        num_stages: {{ $scenario.load.sweep.numStages }}
+        stage_duration: {{ $scenario.load.sweep.stageDuration }}
+        saturation_percentile: {{ $scenario.load.sweep.saturationPercentile }}
+      {{- end }}
+      num_workers: {{ $scenario.load.numWorkers }}
+
+    server:
+      type: {{ .Values.benchmark.target.serverType }}
+      model_name: {{ .Values.benchmark.target.modelName }}
+      base_url: {{ .Values.benchmark.target.baseUrl }}
+      ignore_eos: {{ .Values.benchmark.target.ignoreEos }}
+
+    tokenizer:
+      pretrained_model_name_or_path: {{ .Values.benchmark.target.tokenizerPath }}
+
+    storage:
+      simple_storage_service:
+        bucket_name: {{ .Values.benchmark.storage.s3.bucketName | quote }}
+        path: "{{ .Values.benchmark.storage.s3.pathPrefix }}/{{ .Values.benchmark.scenario }}/{{ .Values.benchmark.target.serverType }}/{{ .Values.benchmark.target.modelName | trimSuffix "/" | base }}/{{randAlpha 20}}"
+{{- end }}

@@ -1,0 +1,91 @@
+{{- if .Values.benchmark.enabled }}
+{{- $scenario := index .Values.benchmark.scenarios .Values.benchmark.scenario }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "benchmark-charts.fullname" . }}-{{ .Values.benchmark.scenario }}
+  namespace: {{ .Values.benchmark.namespace }}
+  labels:
+    {{- include "benchmark-charts.labels" . | nindent 4 }}
+    app.kubernetes.io/component: benchmark
+    benchmark.scenario: {{ .Values.benchmark.scenario }}
+  annotations:
+    benchmark.description: {{ $scenario.description | quote }}
+spec:
+  backoffLimit: {{ .Values.benchmark.job.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.benchmark.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "benchmark-charts.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: benchmark
+        benchmark.scenario: {{ .Values.benchmark.scenario }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Values.benchmark.serviceAccount.name }}
+
+      {{- if .Values.benchmark.affinity.enabled }}
+      # Prefer same-AZ as inference pods for lower latency, but don't block scheduling
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  {{- range $key, $value := .Values.benchmark.affinity.targetLabels }}
+                  {{ $key }}: {{ $value }}
+                  {{- end }}
+              topologyKey: topology.kubernetes.io/zone
+      {{- end }}
+      # Tolerate GPU and system taints so the pod can schedule on any available node
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+      # Dependency Installation Strategy:
+      # Runtime installation - dependencies are installed in the main container at startup
+      # This approach provides flexibility and simplicity for testing and experimentation
+      # For production with faster startup, consider building a custom image with pre-installed dependencies
+
+      containers:
+      - name: inference-perf
+        image: {{ .Values.benchmark.image.repository }}:{{ .Values.benchmark.image.tag }}
+        imagePullPolicy: {{ .Values.benchmark.image.pullPolicy }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          {{- if .Values.benchmark.dependencies.packages }}
+          echo "Installing dependencies..."
+          pip install --no-cache-dir \
+          {{- range .Values.benchmark.dependencies.packages }}
+            {{ . | quote }} \
+          {{- end }}
+            && echo "Dependencies installed successfully"
+          {{- end }}
+          echo "=========================================="
+          echo "Starting {{ .Values.benchmark.scenario | upper }} Performance Test"
+          echo "Description: {{ $scenario.description }}"
+          echo "Target: {{ .Values.benchmark.target.baseUrl }}"
+          echo "Model: {{ .Values.benchmark.target.modelName }}"
+          echo "=========================================="
+          inference-perf --config_file /workspace/config.yml
+        env:
+        - name: BENCHMARK_SCENARIO
+          value: {{ .Values.benchmark.scenario | quote }}
+        - name: TOKENIZERS_PARALLELISM
+          value: "false"
+        volumeMounts:
+        - name: config
+          mountPath: /workspace/config.yml
+          subPath: config.yml
+        resources:
+          {{- toYaml .Values.benchmark.resources | nindent 10 }}
+
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "benchmark-charts.fullname" . }}-{{ .Values.benchmark.scenario }}
+{{- end }}

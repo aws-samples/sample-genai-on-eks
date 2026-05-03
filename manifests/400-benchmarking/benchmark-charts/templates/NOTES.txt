@@ -1,0 +1,11 @@
+Benchmark job deployed: {{ .Values.benchmark.scenario | upper }}
+
+Target: {{ .Values.benchmark.target.baseUrl }}
+Model: {{ .Values.benchmark.target.modelName }}
+
+To monitor:
+  kubectl logs -n {{ .Values.benchmark.namespace }} -l benchmark.scenario={{ .Values.benchmark.scenario }} -f
+
+{{- if .Values.benchmark.storage.s3.bucketName }}
+Results: s3://{{ .Values.benchmark.storage.s3.bucketName }}/{{ .Values.benchmark.storage.s3.pathPrefix }}
+{{- end }}

@@ -1,0 +1,192 @@
+# Default values for benchmark-charts
+
+# Benchmarking Configuration
+benchmark:
+  # Enable benchmarking
+  enabled: true
+
+  # Namespace for benchmark jobs
+  namespace: benchmarking
+
+  # Benchmark image configuration
+  image:
+    repository: quay.io/inference-perf/inference-perf
+    tag: v0.2.0
+    pullPolicy: IfNotPresent
+
+  # Service account for benchmark jobs
+  serviceAccount:
+    create: true
+    name: inference-perf-sa
+    annotations: []
+
+  # Scenario selection: baseline, saturation, sweep, or production
+  scenario: baseline
+
+  # Job configuration
+  job:
+    backoffLimit: 2
+    ttlSecondsAfterFinished: 3600
+
+  # Target inference server configuration
+  target:
+    # Server type: vllm, openai, etc.
+    serverType: vllm
+    # Model name identifier (must match vLLM's served model name from /v1/models)
+    modelName: Ministral-3-8B-Instruct-2512
+    # Full URL to the inference endpoint
+    baseUrl: http://vllm-serve-svc.default.svc.cluster.local:8000
+    # Tokenizer model path (Hugging Face model ID)
+    # Uses Mistral-Nemo as proxy (same 131k Tekken vocab, standard HuggingFace tokenizer class)
+    # Direct use of Ministral-3-8B-Instruct-2512 fails because its tokenizer_config.json
+    # references "TokenizersBackend" which AutoTokenizer cannot resolve
+    tokenizerPath: mistralai/Mistral-Nemo-Instruct-2407
+    # Ignore EOS tokens
+    ignoreEos: true
+
+  # API configuration
+  # Note: synthetic data generation only supports 'completion' API type in inference-perf v0.2.0
+  api:
+    type: completion
+    streaming: true
+
+  # Storage configuration for results
+  storage:
+    s3:
+      bucketName: ""
+      # Path supports {timestamp} placeholder
+      pathPrefix: "benchmarks"
+
+  # Model dependencies to install
+  dependencies:
+    # For Mistral models: sentencepiece and protobuf
+    packages:
+      - sentencepiece
+      - protobuf
+
+  # Resource allocation for benchmark pods
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+
+  # Metrics collection configuration
+  # Scrapes Prometheus metrics from the target inference server during benchmark runs
+  metrics:
+    enabled: false
+    # Endpoint to scrape (typically /metrics on the inference server)
+    endpoint: ""
+    # Scrape interval
+    interval: 5s
+    # Additional labels to attach to scraped metrics
+    labels: {}
+
+  # Co-location configuration
+  # Benchmark pods will be scheduled in the same zone as inference pods
+  affinity:
+    enabled: true
+    # Label selector to find inference pods
+    # NOTE: Update this to match your actual deployment's pod labels
+    # Common patterns: app: <name>, app.kubernetes.io/name: <name>
+    targetLabels:
+      model: mistral
+
+  # Scenario-specific configurations
+  scenarios:
+    # SCENARIO 1: Baseline Performance
+    baseline:
+      description: "Establish optimal performance with zero contention"
+      data:
+        input:
+          mean: 512
+          stdDev: 0
+          min: 512
+          max: 512
+        output:
+          mean: 128
+          stdDev: 0
+          min: 128
+          max: 128
+      load:
+        type: constant
+        numWorkers: 4
+        stages:
+          - rate: 1
+            duration: 300
+
+    # SCENARIO 2: Saturation Testing
+    saturation:
+      description: "Determine maximum sustainable throughput"
+      data:
+        input:
+          mean: 512
+          stdDev: 128
+          min: 128
+          max: 2048
+        output:
+          mean: 256
+          stdDev: 64
+          min: 32
+          max: 512
+      load:
+        type: constant
+        numWorkers: 8
+        stages:
+          - rate: 5
+            duration: 180
+          - rate: 10
+            duration: 180
+          - rate: 20
+            duration: 180
+          - rate: 40
+            duration: 180
+
+    # SCENARIO 3: Automatic Saturation Detection
+    sweep:
+      description: "Automated capacity discovery with intelligent staging"
+      data:
+        input:
+          mean: 512
+          stdDev: 128
+          min: 128
+          max: 2048
+        output:
+          mean: 256
+          stdDev: 64
+          min: 32
+          max: 512
+      load:
+        type: constant
+        numWorkers: 8
+        stages: []  # Auto-generated
+        sweep:
+          type: geometric
+          numRequests: 2000
+          timeout: 60
+          numStages: 5
+          stageDuration: 180
+          saturationPercentile: 95
+
+    # SCENARIO 4: Production Simulation
+    production:
+      description: "Realistic traffic with variable sizes and bursty arrivals"
+      data:
+        input:
+          mean: 1024
+          stdDev: 512
+          min: 128
+          max: 4096
+        output:
+          mean: 512
+          stdDev: 256
+          min: 50
+          max: 2048
+      load:
+        type: poisson  # Realistic bursty arrivals
+        numWorkers: 8
+        stages:
+          - rate: 15
+            duration: 600
