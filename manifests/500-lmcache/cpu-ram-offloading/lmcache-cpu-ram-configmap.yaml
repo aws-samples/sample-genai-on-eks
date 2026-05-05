@@ -5,8 +5,15 @@ metadata:
 data:
   query-twice.py: |
     import time
+    import sys
     from openai import OpenAI
     from transformers import AutoTokenizer
+    
+    # Number of chars of the model's streaming response to display as a preview.
+    # The full response is still collected (used for length reporting) but only
+    # the first PREVIEW_CHARS characters are streamed to stdout to keep output
+    # readable and focused on the cache timing metrics.
+    PREVIEW_CHARS = 80
     
     client = OpenAI(
         api_key="dummy-key",
@@ -38,12 +45,18 @@ data:
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Instruct-2507")
     question = "Summarize the key concepts in 2 sentences."
     
-    def query_and_measure_ttft(context, label):
+    def query_and_measure_ttft(context, label, description):
         prompt = f"{context}\n\n{question}"
-        print(f"Number of tokens in {label} prompt: {len(tokenizer.encode(prompt))}")
+        n_tokens = len(tokenizer.encode(prompt))
+        print(f"\n=== {label} request: {description} ===")
+        print(f"Sending {n_tokens:,}-token prompt to vLLM (model streaming response):")
+        sys.stdout.write("  Response preview: ")
+        sys.stdout.flush()
     
         start = time.perf_counter()
         ttft = None
+        full_response_chars = 0
+        preview_chars_printed = 0
     
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
@@ -57,20 +70,52 @@ data:
             if chunk_message is not None:
                 if ttft is None:
                     ttft = time.perf_counter()
-                print(chunk_message, end="", flush=True)
+                full_response_chars += len(chunk_message)
+                # Print only the first PREVIEW_CHARS chars to keep output tidy.
+                if preview_chars_printed < PREVIEW_CHARS:
+                    remaining = PREVIEW_CHARS - preview_chars_printed
+                    visible = chunk_message[:remaining]
+                    sys.stdout.write(visible)
+                    sys.stdout.flush()
+                    preview_chars_printed += len(visible)
     
-        print("\n")
+        if full_response_chars > PREVIEW_CHARS:
+            sys.stdout.write(f"...\n  [response truncated - full length: {full_response_chars} chars]\n")
+        else:
+            sys.stdout.write("\n")
+        sys.stdout.flush()
         return ttft - start
     
-    print("Querying vLLM server with cold LMCache CPU Offload")
-    cold_ttft = query_and_measure_ttft(cold_context, "cold")
-    print(f"Cold TTFT: {cold_ttft:.3f} seconds")
+    print("=" * 60)
+    print("LMCache L1 (CPU RAM) Cache Test")
+    print("=" * 60)
+    print("Sends two requests with 90% prompt overlap.")
+    print("Cold request populates the L1 cache; warm request should hit L1")
+    print("and return faster (lower TTFT).")
     
-    print("\nQuerying vLLM server with warm LMCache CPU Offload (90% same content)")
-    warm_ttft = query_and_measure_ttft(warm_context, "warm")
-    print(f"Warm TTFT: {warm_ttft:.3f} seconds")
+    cold_ttft = query_and_measure_ttft(
+        cold_context,
+        "Cold",
+        "LMCache empty, GPU computes all tokens",
+    )
+    print(f"[OK] Cold TTFT: {cold_ttft:.3f}s (L1 cache now populated with prompt's KV tensors)")
     
-    print(f"\nTTFT Improvement: {(cold_ttft - warm_ttft):.3f} seconds ({(cold_ttft/warm_ttft):.1f}x faster)")
+    warm_ttft = query_and_measure_ttft(
+        warm_context,
+        "Warm",
+        "same 90% content, LMCache L1 should serve the matching prefix",
+    )
+    print(f"[OK] Warm TTFT: {warm_ttft:.3f}s (GPU only computed the new 10% tail)")
+    
+    speedup = cold_ttft / warm_ttft if warm_ttft > 0 else 0
+    improvement = cold_ttft - warm_ttft
+    print()
+    print("-" * 60)
+    print(f"TTFT Improvement: {improvement:.3f}s ({speedup:.1f}x faster)")
+    print("Why: cold had to compute KV tensors for all tokens in the prompt;")
+    print("warm served ~90% from LMCache L1 CPU RAM, so the GPU only had to")
+    print("compute the new ~10% (tail bytes + question) from scratch.")
+    print("-" * 60)
     
   python-docs.txt: |
     

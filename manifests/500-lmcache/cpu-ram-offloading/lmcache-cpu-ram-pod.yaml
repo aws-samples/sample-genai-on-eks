@@ -22,7 +22,7 @@ spec:
     args:
     - |
       # LMCache should be pre-installed in this AWS DLC vllm image
-      python3 -c "import lmcache; print('lmcache version:', lmcache.__version__)" || pip install --no-cache-dir lmcache==0.3.8 openai
+      python3 -c "import lmcache; print('lmcache version:', lmcache.__version__)" || pip install --no-cache-dir lmcache==0.3.8 openai==1.58.1
 
       # Start vllm with LMCache CPU RAM (L1) offloading
       python3 -m vllm.entrypoints.openai.api_server \
@@ -76,11 +76,21 @@ spec:
         cpu: 6
         memory: 32Gi
         nvidia.com/gpu: 1
+    # startupProbe gates the other probes — readiness/liveness only start once
+    # this succeeds. Allows up to 5 minutes for slow startup (image pull,
+    # S3 model download, CUDA init, LMCache init) without holding the pod
+    # artificially "NotReady" after /health is actually responding.
+    startupProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 60
     readinessProbe:
       httpGet:
         path: /health
         port: 8080
-      initialDelaySeconds: 60
       periodSeconds: 10
       timeoutSeconds: 5
       failureThreshold: 3
@@ -88,7 +98,6 @@ spec:
       httpGet:
         path: /health
         port: 8080
-      initialDelaySeconds: 120
       periodSeconds: 30
       timeoutSeconds: 10
       failureThreshold: 3
