@@ -5,8 +5,8 @@ benchmark:
   # Enable benchmarking
   enabled: true
 
-  # Namespace for benchmark jobs
-  namespace: benchmarking
+  # Namespace is inherited from `helm install -n <namespace>` (Release.Namespace).
+  # Resources are created in whichever namespace the chart is installed into.
 
   # Benchmark image configuration
   image:
@@ -14,10 +14,14 @@ benchmark:
     tag: v0.2.0
     pullPolicy: IfNotPresent
 
-  # Service account for benchmark jobs
+  # Service account for benchmark jobs.
+  # Default reuses the pre-provisioned `model-storage-sa` (with EKS Pod Identity
+  # already wired to a role with S3 read+write on the workshop bucket).
+  # Override `create: true` and pick a custom `name` if your cluster already has
+  # a different SA pre-wired for this workload.
   serviceAccount:
-    create: true
-    name: inference-perf-sa
+    create: false
+    name: model-storage-sa
     annotations: []
 
   # Scenario selection: baseline, saturation, sweep, or production

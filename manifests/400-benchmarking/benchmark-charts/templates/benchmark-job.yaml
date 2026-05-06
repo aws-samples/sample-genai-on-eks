@@ -5,7 +5,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ include "benchmark-charts.fullname" . }}-{{ .Values.benchmark.scenario }}
-  namespace: {{ .Values.benchmark.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "benchmark-charts.labels" . | nindent 4 }}
     app.kubernetes.io/component: benchmark
