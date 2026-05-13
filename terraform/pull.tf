@@ -40,28 +40,35 @@ resource "kubectl_manifest" "job_model_download" {
         spec:
           serviceAccountName: ${kubectl_manifest.model_storage_service_account.name}
           restartPolicy: Never
-          containers:
-            - name: validate-pod-identity
+          initContainers:
+            - name: wait-for-pod-identity
               image: public.ecr.aws/aws-cli/aws-cli:latest
               command: ['/bin/sh', '-c']
               args:
                 - |
                   set -e
                   
-                  echo 'Checking Pod Identity...'
                   EXPECTED_ROLE="genai-model-storage-role"
-                  CURRENT_ROLE=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d'/' -f2 2>/dev/null || echo "unknown")
+                  MAX_RETRIES=30
+                  RETRY_INTERVAL=10
                   
-                  echo "Expected role: $EXPECTED_ROLE"
-                  echo "Current role: $CURRENT_ROLE"
+                  echo "Waiting for Pod Identity to propagate..."
+                  for i in $(seq 1 $MAX_RETRIES); do
+                    CURRENT_ROLE=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null | cut -d'/' -f2 || echo "unknown")
+                    echo "Attempt $i/$MAX_RETRIES - Current role: $CURRENT_ROLE"
+                    
+                    if [ "$CURRENT_ROLE" = "$EXPECTED_ROLE" ]; then
+                      echo "Pod Identity verified successfully!"
+                      exit 0
+                    fi
+                    
+                    echo "Pod Identity not ready yet. Retrying in ${RETRY_INTERVAL}s..."
+                    sleep $RETRY_INTERVAL
+                  done
                   
-                  if [ "$CURRENT_ROLE" != "$EXPECTED_ROLE" ]; then
-                    echo "ERROR: Pod Identity not working. Using node role instead of Pod Identity role."
-                    echo "Pod will be recreated to retry Pod Identity association."
-                    exit 1
-                  fi
-                  
-                  echo "Pod Identity verified successfully!"
+                  echo "ERROR: Pod Identity did not propagate within timeout."
+                  exit 1
+          containers:
             - name: download
               image: python:3.11-slim
               env:
