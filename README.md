@@ -9,25 +9,6 @@ Deploy and run Large Language Model (LLM) inference workloads on Amazon EKS with
 - **Terraform infrastructure** — EKS Auto Mode cluster, VPC, S3 model storage, Amazon Managed Prometheus, Grafana dashboards, and IAM roles
 - **Kubernetes manifests** — Ready-to-deploy configurations for inference workloads
 
-## Quick Start
-
-```bash
-git clone https://github.com/aws-samples/sample-genai-on-eks.git
-cd sample-genai-on-eks/terraform
-
-terraform init
-terraform apply
-```
-
-> Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
-
-## Prerequisites
-
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (>= 2.x)
-- [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.3)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- AWS account with GPU instance quota
-
 ## Target Audience
 
 This workshop is intended for Machine Learning Scientists/Engineers, Data Scientists/Engineers, Prompt Engineers, Developers, and Technical Founders.
@@ -39,6 +20,25 @@ While not mandatory, participants will benefit from:
 - Familiarity with Python programming
 
 New to Amazon EKS? We recommend completing the [EKS Workshop](https://www.eksworkshop.com/) first.
+
+## Prerequisites
+
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (>= 2.x)
+- [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.3)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- AWS account with GPU instance quota
+
+## Quick Start
+
+```bash
+git clone https://github.com/aws-samples/sample-genai-on-eks.git
+cd sample-genai-on-eks/terraform
+
+terraform init
+terraform apply
+```
+
+> Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
 
 ## Workshop Instructions
 
