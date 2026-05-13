@@ -69,9 +69,8 @@ resource "helm_release" "kube_prometheus_stack" {
           effect: NoSchedule
       # Configure AWS authentication
       grafana.ini:
-        aws:
-          allowed_auth_providers: ec2_iam_role
-          assume_role_enabled: true
+        auth:
+          sigv4_auth_enabled: true
       # Disable default Prometheus datasource since we're using AMP
       sidecar:
         datasources:
@@ -87,7 +86,7 @@ resource "helm_release" "kube_prometheus_stack" {
           url: ${trimsuffix(aws_prometheus_workspace.main.prometheus_endpoint, "/")}
           isDefault: true
           jsonData:
-            authType: ec2_iam_role
+            sigV4Auth: true
             defaultRegion: ${local.region}
             sigV4Region: ${local.region}
           editable: true
