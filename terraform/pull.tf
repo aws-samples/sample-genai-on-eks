@@ -62,7 +62,7 @@ resource "kubectl_manifest" "job_model_download" {
                       exit 0
                     fi
                     
-                    echo "Pod Identity not ready yet. Retrying in ${RETRY_INTERVAL}s..."
+                    echo "Pod Identity not ready yet. Retrying in $${RETRY_INTERVAL}s..."
                     sleep $RETRY_INTERVAL
                   done
                   
