@@ -83,21 +83,6 @@ Once you have the ODCR, you can follow along with the workshop labs: [Workshop I
 
 ---
 
-## What Gets Deployed
-
-| Component | Purpose |
-| --------- | ------- |
-| EKS Auto Mode Cluster | Managed Kubernetes with automatic node provisioning |
-| VPC (3 AZs) | Networking with public/private subnets and NAT gateway |
-| S3 Bucket + CSI Driver | Model storage accessible from pods via Mountpoint S3 |
-| Amazon Managed Prometheus | Metrics backend for Grafana dashboards |
-| kube-prometheus-stack | Prometheus, Grafana, and exporters |
-| Grafana Dashboards | Pre-configured dashboards for vLLM, Ray Serve, DCGM |
-| IAM Roles + Pod Identity | Secure access for Prometheus, Grafana, and model storage |
-| ALB Ingress | Load balancer for exposing services |
-
----
-
 ## Cleanup
 
 To destroy all resources and avoid ongoing AWS charges:
