@@ -73,11 +73,19 @@ aws eks update-kubeconfig --name genai-workshop --region us-east-2
 
 If you deployed to a different region, replace `us-east-2` with your chosen region.
 
-### 5. Create On-Demand Capacity Reservation (ODCR)
+### 5. Restrict ingress to your IP
+
+Lock down ALB ingress to only allow traffic from your current public IP:
+
+```bash
+kubectl patch ingressclassparams alb --type=merge -p "{\"spec\":{\"inboundCIDRs\":[\"$(curl -s https://checkip.amazonaws.com | tr -d '\n')/32\"]}}"
+```
+
+### 6. Create On-Demand Capacity Reservation (ODCR)
 
 Follow the steps here to create an ODCR for GPU instances: [Create ODCR](https://catalog.workshops.aws/genai-on-eks/en-US/50-getting-started/01-self-paced)
 
-### 6. Follow the Workshop
+### 7. Follow the Workshop
 
 Once you have the ODCR, you can follow along with the workshop labs: [Workshop Instructions](https://catalog.workshops.aws/genai-on-eks/en-US/50-getting-started/01-self-paced)
 

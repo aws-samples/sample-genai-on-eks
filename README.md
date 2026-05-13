@@ -28,31 +28,13 @@ New to Amazon EKS? We recommend completing the [EKS Workshop](https://www.ekswor
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - AWS account with GPU instance quota
 
-## Quick Start
+## Getting Started
 
-```bash
-git clone https://github.com/aws-samples/sample-genai-on-eks.git
-cd sample-genai-on-eks/terraform
-
-terraform init
-terraform apply --auto-approve
-```
-
-To deploy in a different region:
-
-```bash
-terraform apply --auto-approve -var="region=us-west-2"
-```
-
-> Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
-
-## Workshop Instructions
-
-Follow the step-by-step guide: [GenAI on EKS Workshop](https://catalog.workshops.aws/genai-on-eks/en-US/50-getting-started/01-self-paced)
+See [terraform/README.md](./terraform/README.md) for full deployment instructions.
 
 ## Repository Structure
 
-```
+```text
 .
 ├── terraform/          # Infrastructure as Code (EKS, VPC, S3, AMP, Grafana)
 │   ├── grafana-dashboards/   # Pre-built Grafana dashboard JSON files
