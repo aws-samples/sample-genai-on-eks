@@ -1,12 +1,44 @@
-## Generative AI on Amazon EKS
+# Generative AI on Amazon EKS
 
-In this workshop, learn how to get started with Large Language Model (LLM) applications and inference on Amazon EKS. Discover how to deploy and manage LLM workloads. Through hands-on labs, you'll explore how to leverage Amazon EKS along with AWS services and open-source tools to create robust LLM solutions. 
+Deploy and run Large Language Model (LLM) inference workloads on Amazon EKS with GPU acceleration, observability, and model storage — all provisioned with Terraform.
 
-#### Target audience
-This workshop is intended mainly for Machine Learning Scientists/Engineers, Data Scientists/Engineers, Prompt Engineers, Developers, and Technical Founders.
+![Architecture](./architecture.png)
 
-#### Prerequisites
-This is an advanced (400-level) workshop. While not mandatory, participants will benefit from:
+## What's Included
+
+- **Terraform infrastructure** — EKS Auto Mode cluster, VPC, S3 model storage, Amazon Managed Prometheus, Grafana dashboards, and IAM roles
+- **Kubernetes manifests** — Ready-to-deploy configurations for inference workloads
+
+## Quick Start
+
+```bash
+git clone https://github.com/aws-samples/sample-genai-on-eks.git
+cd sample-genai-on-eks/terraform
+
+terraform init
+terraform apply
+```
+
+This deploys everything to `us-east-2` by default. To use a different region:
+
+```bash
+terraform apply -var="region=us-west-2"
+```
+
+> Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
+
+## Prerequisites
+
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (>= 2.x)
+- [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.3)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- AWS account with GPU instance quota
+
+## Target Audience
+
+This workshop is intended for Machine Learning Scientists/Engineers, Data Scientists/Engineers, Prompt Engineers, Developers, and Technical Founders.
+
+While not mandatory, participants will benefit from:
 
 - Basic knowledge of ML frameworks (PyTorch, Hugging Face Transformers)
 - Fundamental understanding of Kubernetes concepts
@@ -14,9 +46,32 @@ This is an advanced (400-level) workshop. While not mandatory, participants will
 
 New to Amazon EKS? We recommend completing the [EKS Workshop](https://www.eksworkshop.com/) first.
 
-#### Getting Started
+## Workshop Instructions
 
-Follow our step-by-step guide: [Workshop Instructions](https://catalog.workshops.aws/genai-on-eks/en-US/50-getting-started/01-self-paced)
+Follow the step-by-step guide: [GenAI on EKS Workshop](https://catalog.workshops.aws/genai-on-eks/en-US/50-getting-started/01-self-paced)
+
+## Repository Structure
+
+```
+.
+├── terraform/          # Infrastructure as Code (EKS, VPC, S3, AMP, Grafana)
+│   ├── grafana-dashboards/   # Pre-built Grafana dashboard JSON files
+│   ├── main.tf               # Provider and locals configuration
+│   ├── eks.tf                # EKS cluster and S3 CSI driver
+│   ├── vpc.tf                # VPC and networking
+│   ├── helm.tf               # Observability stack (Prometheus, Grafana)
+│   ├── amp.tf                # Amazon Managed Prometheus
+│   ├── variables.tf          # Configurable variables
+│   └── ...
+└── manifests/          # Kubernetes manifests for inference workloads
+```
+
+## Cleanup
+
+```bash
+cd terraform
+terraform destroy
+```
 
 ## Security
 
@@ -25,4 +80,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
-
