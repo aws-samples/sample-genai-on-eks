@@ -54,13 +54,13 @@ terraform init
 Deploy with the default region (`us-east-2`):
 
 ```bash
-terraform apply
+terraform apply --auto-approve
 ```
 
 Or deploy to a different region:
 
 ```bash
-terraform apply -var="region=us-west-2"
+terraform apply --auto-approve -var="region=us-west-2"
 ```
 
 > Deployment takes approximately 20-25 minutes.
@@ -88,13 +88,13 @@ Once you have the ODCR, you can follow along with the workshop labs: [Workshop I
 To destroy all resources and avoid ongoing AWS charges:
 
 ```bash
-terraform destroy
+terraform destroy --auto-approve
 ```
 
 Or if you deployed to a custom region:
 
 ```bash
-terraform destroy -var="region=us-west-2"
+terraform destroy --auto-approve -var="region=us-west-2"
 ```
 
 > The S3 bucket has `force_destroy = true` so it will be deleted even if it contains model files.

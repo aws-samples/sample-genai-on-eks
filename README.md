@@ -35,7 +35,13 @@ git clone https://github.com/aws-samples/sample-genai-on-eks.git
 cd sample-genai-on-eks/terraform
 
 terraform init
-terraform apply
+terraform apply --auto-approve
+```
+
+To deploy in a different region:
+
+```bash
+terraform apply --auto-approve -var="region=us-west-2"
 ```
 
 > Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
@@ -64,7 +70,7 @@ Follow the step-by-step guide: [GenAI on EKS Workshop](https://catalog.workshops
 
 ```bash
 cd terraform
-terraform destroy
+terraform destroy --auto-approve
 ```
 
 ## Security
