@@ -19,12 +19,6 @@ terraform init
 terraform apply
 ```
 
-This deploys everything to `us-east-2` by default. To use a different region:
-
-```bash
-terraform apply -var="region=us-west-2"
-```
-
 > Deployment takes ~20-25 minutes. See [terraform/README.md](./terraform/README.md) for full details, configuration options, and troubleshooting.
 
 ## Prerequisites

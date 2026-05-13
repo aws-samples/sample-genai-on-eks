@@ -75,31 +75,6 @@ If you deployed to a different region, replace `us-east-2` with your chosen regi
 
 ---
 
-## Configuration
-
-All variables have sensible defaults. Override any of them with `-var` flags:
-
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `region` | `us-east-2` | AWS region for all resources |
-| `cluster_name` | `genai-workshop` | Name of the EKS cluster |
-| `cluster_version` | `1.34` | Kubernetes version |
-| `vpc_cidr` | `10.0.0.0/16` | CIDR block for the VPC |
-| `gpu_instance_types` | `["g6e.2xlarge"]` | Instance types for GPU nodes |
-| `s3_bucket_prefix` | `genai-models` | Prefix for the S3 model storage bucket |
-| `grafana_admin_password` | `notforproductionuse` | Grafana admin password |
-
-Example with multiple overrides:
-
-```bash
-terraform apply \
-  -var="region=eu-west-1" \
-  -var="cluster_name=my-genai-cluster" \
-  -var="gpu_instance_types=[\"g5.2xlarge\"]"
-```
-
----
-
 ## What Gets Deployed
 
 | Component | Purpose |
@@ -112,18 +87,6 @@ terraform apply \
 | Grafana Dashboards | Pre-configured dashboards for vLLM, Ray Serve, DCGM |
 | IAM Roles + Pod Identity | Secure access for Prometheus, Grafana, and model storage |
 | ALB Ingress | Load balancer for exposing services |
-
----
-
-## Accessing Services
-
-**Grafana:**
-
-```bash
-kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
-```
-
-Then open http://localhost:3000 (user: `admin`, password: `notforproductionuse`)
 
 ---
 
