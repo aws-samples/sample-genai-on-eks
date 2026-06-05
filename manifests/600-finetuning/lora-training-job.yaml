@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anyvc-lora-finetune
+  labels:
+    app: anyvc-lora-finetune
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: anyvc-lora-finetune
+    spec:
+      restartPolicy: Never
+      serviceAccountName: model-storage-sa
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      nodeSelector:
+        karpenter.sh/nodepool: gpu
+      containers:
+        - name: trainer
+          image: 763104351884.dkr.ecr.${AWS_REGION}.amazonaws.com/pytorch-training:2.8.0-gpu-py312-cu129-ubuntu22.04-ec2
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Installing dependencies..."
+              pip install --no-cache-dir \
+                git+https://github.com/huggingface/transformers \
+                datasets peft trl accelerate sentencepiece \
+                mistral-common>=1.8.6 boto3 2>/dev/null
+              echo "Starting LoRA training for AnyVC..."
+              python /scripts/train_lora.py
+          env:
+            - name: HF_MODEL_ID
+              value: "mistralai/Ministral-3-8B-Instruct-2512"
+            - name: MODEL_PATH
+              value: "/models/Ministral-3-8B-Instruct-2512"
+            - name: DATASET_PATH
+              value: "/scripts/anyvc-startup-dataset.jsonl"
+            - name: OUTPUT_DIR
+              value: "/output/anyvc-startup-lora"
+            - name: S3_OUTPUT_PATH
+              value: "s3://${S3_BUCKET_NAME}/anyvc-startup-lora/"
+            - name: NUM_EPOCHS
+              value: "5"
+            - name: BATCH_SIZE
+              value: "2"
+            - name: GRADIENT_ACCUMULATION
+              value: "2"
+            - name: LEARNING_RATE
+              value: "2e-4"
+            - name: MAX_SEQ_LENGTH
+              value: "512"
+            - name: LORA_RANK
+              value: "16"
+            - name: LORA_ALPHA
+              value: "32"
+          resources:
+            requests:
+              cpu: "6"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: output-volume
+              mountPath: /output
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: mistral-model-pvc
+        - name: scripts
+          configMap:
+            name: anyvc-training-scripts
+        - name: output-volume
+          emptyDir:
+            sizeLimit: 5Gi

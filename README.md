@@ -4,6 +4,14 @@ Deploy and run Large Language Model (LLM) inference workloads on Amazon EKS with
 
 ![Architecture](./architecture.png)
 
+## 📺 Workshop Walkthrough
+
+<p align="center">
+<a href="https://s12d.com/self-paced-github-youtube">
+<img src="https://img.youtube.com/vi/NPHvJ599bV0/hqdefault.jpg" alt="Watch on YouTube">
+</a>
+</p>
+
 ## What's Included
 
 - **Terraform infrastructure** — EKS Auto Mode cluster, VPC, S3 model storage, Amazon Managed Prometheus, Grafana dashboards, and IAM roles
