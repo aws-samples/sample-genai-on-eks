@@ -6,7 +6,7 @@ Deploy and run Large Language Model (LLM) inference workloads on Amazon EKS with
 
 ## 📺 Workshop Walkthrough
 
-In this video, you'll see how to deploy the GenAI on EKS workshop in your own AWS account using Terraform and run it end-to-end.
+In this video, you'll see how to deploy the [GenAI on EKS workshop](https://catalog.workshops.aws/genai-on-eks/en-US) in your own AWS account using Terraform and run it end-to-end.
 
 <p align="center">
 <a href="https://s12d.com/self-paced-github-youtube">
