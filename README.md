@@ -2,6 +2,10 @@
 
 Deploy and run Large Language Model (LLM) inference workloads on Amazon EKS with GPU acceleration, observability, and model storage — all provisioned with Terraform.
 
+**📺 Watch: How to deploy this workshop in your own AWS account**
+
+[![▶ Watch on YouTube](https://ytcards.demolab.com/?id=NPHvJ599bV0&title=%E2%96%B6+Watch+on+YouTube&lang=en&timestamp=0&background_color=%23f89530&title_color=%23ffffff&stats_color=%23ffffff&max_title_lines=2&width=480&border_radius=5)](https://s12d.com/self-paced-workshop-youtube)
+
 ![Architecture](./architecture.png)
 
 ## What's Included
