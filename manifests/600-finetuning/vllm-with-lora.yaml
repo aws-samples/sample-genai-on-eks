@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: s3-bucket-pv
+spec:
+  capacity:
+    storage: 30Gi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: s3.csi.aws.com
+    volumeHandle: s3-csi-bucket-volume
+    volumeAttributes:
+      bucketName: ${S3_BUCKET_NAME}
+      region: ${AWS_REGION}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-bucket-pvc
+spec:
+  accessModes:
+    - ReadOnlyMany
+  volumeName: s3-bucket-pv
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-serve-svc
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/app-metrics: "true"
+    prometheus.io/port: "8000"
+  labels:
+    model: anyvc
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+  selector:
+    model: anyvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anyvc
+  labels:
+    model: anyvc
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      model: anyvc
+  template:
+    metadata:
+      labels:
+        model: anyvc
+    spec:
+      serviceAccountName: model-storage-sa
+      tolerations:
+        - effect: NoSchedule
+          key: nvidia.com/gpu
+          operator: Exists
+      nodeSelector:
+        karpenter.sh/nodepool: gpu
+      containers:
+        - name: vllm
+          image: 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.15.1-gpu-py312-cu129-ubuntu22.04-ec2-v1.1-soci
+          imagePullPolicy: IfNotPresent
+          args:
+            - '--port=8000'
+            - '--model=s3://${S3_BUCKET_NAME}/Ministral-3-8B-Instruct-2512/'
+            - '--served-model-name=ministral-base'
+            - '--load-format=runai_streamer'
+            - '--model-loader-extra-config={"concurrency":16}'
+            - '--tokenizer_mode=auto'
+            - '--trust-remote-code'
+            - '--gpu_memory_utilization=0.90'
+            - '--max-model-len=2048'
+            - '--tensor-parallel-size=1'
+            - '--max-num-batched-tokens=8192'
+            - '--max-num-seqs=256'
+            - '--block-size=16'
+            - '--enforce-eager'
+            - '--swap-space=16'
+            - '--disable-custom-all-reduce'
+            - '--config-format=mistral'
+            - '--enable-auto-tool-choice'
+            - '--tool-call-parser=mistral'
+            - '--enable-lora'
+            - '--max-lora-rank=16'
+            - '--lora-modules={"name":"anyvc-startup-expert","path":"/s3/anyvc-startup-lora","base_model_name":"ministral-base"}'
+          env:
+            - name: CUDA_LAUNCH_BLOCKING
+              value: "1"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "max_split_size_mb:512"
+            - name: VLLM_ATTENTION_BACKEND
+              value: "FLASHINFER"
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+              name: http
+          resources:
+            requests:
+              cpu: 6
+              memory: 32Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: 6
+              memory: 32Gi
+              nvidia.com/gpu: 1
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: s3-bucket
+              mountPath: /s3
+              readOnly: true
+      volumes:
+        - name: s3-bucket
+          persistentVolumeClaim:
+            claimName: s3-bucket-pvc
