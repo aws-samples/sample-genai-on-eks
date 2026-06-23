@@ -290,9 +290,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "builder",
-          "expr": "vllm:time_per_output_token_seconds_count",
-          "instant": true,
+          "editorMode": "code",
+          "expr": "rate(vllm:request_time_per_output_token_seconds_sum[5m]) / rate(vllm:request_time_per_output_token_seconds_count[5m])",
+          "instant": false,
           "key": "Q-4f2fc92a-5504-44f5-98c2-707f8123b677-0",
           "range": true,
           "refId": "A"
