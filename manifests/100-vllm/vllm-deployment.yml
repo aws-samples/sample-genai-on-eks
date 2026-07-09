@@ -67,8 +67,6 @@ spec:
             - '--enable-auto-tool-choice'
             - '--tool-call-parser=mistral'
           env:
-            - name: CUDA_LAUNCH_BLOCKING
-              value: "1"
             - name: PYTORCH_CUDA_ALLOC_CONF
               value: "max_split_size_mb:512"
             - name: VLLM_ATTENTION_BACKEND
@@ -86,19 +84,3 @@ spec:
               cpu: 6
               memory: 32Gi
               nvidia.com/gpu: 1
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 120
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3

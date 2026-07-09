@@ -29,7 +29,7 @@ spec:
             - |
               echo "Installing dependencies..."
               pip install --no-cache-dir \
-                git+https://github.com/huggingface/transformers \
+                transformers==5.11.0 \
                 datasets==5.0.0 peft==0.19.1 trl==1.5.1 accelerate==1.13.0 sentencepiece==0.2.1 \
                 mistral-common==1.11.3 boto3 2>/dev/null
               echo "Starting LoRA training for AnyVC..."
