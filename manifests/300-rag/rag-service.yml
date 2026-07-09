@@ -40,26 +40,14 @@ spec:
               value: "${AWS_REGION}"
           resources:
             requests:
-              cpu: "500m"
-              memory: "1Gi"
+              cpu: "2"
+              memory: "4Gi"
             limits:
               cpu: "2"
               memory: "4Gi"
           volumeMounts:
             - name: rag-script
               mountPath: /app
-          readinessProbe:
-            httpGet:
-              path: /docs
-              port: 8080
-            initialDelaySeconds: 300
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /docs
-              port: 8080
-            initialDelaySeconds: 300
-            periodSeconds: 30
       volumes:
         - name: rag-script
           configMap:
