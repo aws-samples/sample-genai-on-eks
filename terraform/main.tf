@@ -25,7 +25,7 @@ data "aws_availability_zones" "available" {
 # Local values for consistent naming and configuration
 locals {
   name   = var.cluster_name
-  region = var.region
+  region = var.region != null ? var.region : data.aws_region.current.id
 
   # Keep tags minimal to avoid unnecessary resource updates
   tags = {}
@@ -41,10 +41,6 @@ locals {
 ################################################################################
 # Provider Configuration
 ################################################################################
-
-provider "aws" {
-  region = var.region
-}
 
 provider "aws" {
   alias  = "virginia"

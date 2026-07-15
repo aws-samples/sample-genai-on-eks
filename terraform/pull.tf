@@ -31,7 +31,7 @@ resource "kubectl_manifest" "job_model_download" {
       name: model-download
       namespace: default
     spec:
-      ttlSecondsAfterFinished: 86400  # Keep completed pods for 24 hours
+      ttlSecondsAfterFinished: 604800  # Keep completed pods for 7 days
       backoffLimit: 10
       activeDeadlineSeconds: 3600  # 1 hour timeout
       completionMode: NonIndexed

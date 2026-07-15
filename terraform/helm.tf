@@ -38,7 +38,7 @@ resource "helm_release" "kube_prometheus_stack" {
   name             = "kube-prometheus-stack"
   repository       = "https://prometheus-community.github.io/helm-charts"
   chart            = "kube-prometheus-stack"
-  version          = "69.8.2"
+  version          = "83.0.0"
   namespace        = "monitoring"
   create_namespace = false
   wait             = false
@@ -77,7 +77,10 @@ resource "helm_release" "kube_prometheus_stack" {
           defaultDatasourceEnabled: false
       # Install AWS data source plugins
       plugins:
-        - grafana-amazonprometheus-datasource ${var.grafana_amp_plugin_version}
+        - grafana-amazonprometheus-datasource
+      envFromSecrets: []
+      env:
+        GF_PLUGINS_PREINSTALL: grafana-amazonprometheus-datasource
       # Add AMP as a datasource using the dedicated AMP plugin
       additionalDataSources:
         - name: Amazon-Managed-Prometheus

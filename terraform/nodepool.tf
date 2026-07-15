@@ -93,7 +93,7 @@ resource "kubectl_manifest" "karpenter_node_pool_gpu" {
               values: ${jsonencode(var.gpu_instance_types)}
       
       limits:
-        cpu: 8
+        cpu: 32
         nvidia.com/gpu: 1
       disruption:
         consolidationPolicy: WhenEmpty
