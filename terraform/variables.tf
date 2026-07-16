@@ -15,9 +15,9 @@ variable "cluster_version" {
 }
 
 variable "region" {
-  description = "AWS region for resources. Override with: terraform apply -var=region=us-west-2"
+  description = "AWS region for resources"
   type        = string
-  default     = "us-east-2"
+  default     = null # Will use current region from data source
 }
 
 variable "vpc_cidr" {
@@ -57,15 +57,9 @@ variable "model_prefix" {
 }
 
 variable "gpu_instance_types" {
-  description = "Instance types for GPU nodes"
+  description = "Instance types for GPU nodes (ordered by preference for ODCR failover)"
   type        = list(string)
-  default     = ["g6e.2xlarge"]
-}
-
-variable "grafana_amp_plugin_version" {
-  description = "Version of the grafana-amazonprometheus-datasource plugin"
-  type        = string
-  default     = "2.3.2"
+  default     = ["g6e.2xlarge", "g6e.4xlarge", "g6e.8xlarge"]
 }
 
 variable "ingress_inbound_cidrs" {
