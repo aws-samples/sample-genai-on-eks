@@ -4,7 +4,7 @@
 
 ## Architecture
 
-![GenAI on EKS Workshop Architecture](../architecture.png)
+![GenAI on EKS Workshop Architecture](https://raw.githubusercontent.com/aws-samples/sample-genai-on-eks/main/architecture.png)
 
 The Terraform configuration deploys:
 
@@ -20,11 +20,11 @@ The Terraform configuration deploys:
 
 ## Prerequisites
 
-| Tool | Version | Install |
-| ---- | ------- | ------- |
-| AWS CLI | >= 2.x | [Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
-| Terraform | >= 1.3 | [Guide](https://developer.hashicorp.com/terraform/install) |
-| kubectl | latest | [Guide](https://kubernetes.io/docs/tasks/tools/) |
+| Tool      | Version | Install                                                                                |
+| --------- | ------- | -------------------------------------------------------------------------------------- |
+| AWS CLI   | >= 2.x  | [Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
+| Terraform | >= 1.3  | [Guide](https://developer.hashicorp.com/terraform/install)                             |
+| kubectl   | latest  | [Guide](https://kubernetes.io/docs/tasks/tools/)                                       |
 
 Ensure your AWS credentials are configured:
 
@@ -111,9 +111,9 @@ terraform destroy --auto-approve -var="region=us-west-2"
 
 ## Troubleshooting
 
-| Issue | Solution |
-| ----- | -------- |
-| Timeout during apply | Re-run `terraform apply` — some resources take time to stabilize |
-| kubectl auth errors | Run `aws eks update-kubeconfig` again with the correct region |
+| Issue                   | Solution                                                               |
+| ----------------------- | ---------------------------------------------------------------------- |
+| Timeout during apply    | Re-run `terraform apply` — some resources take time to stabilize       |
+| kubectl auth errors     | Run `aws eks update-kubeconfig` again with the correct region          |
 | GPU nodes not launching | Verify your account has quota for the GPU instance type in your region |
-| Grafana shows no data | Wait 2-3 minutes for Prometheus to start scraping and remote writing |
+| Grafana shows no data   | Wait 2-3 minutes for Prometheus to start scraping and remote writing   |

@@ -1,7 +1,0 @@
-apiVersion: eks.amazonaws.com/v1
-kind: NodeClass
-metadata:
-  name: gpu
-spec:
-  capacityReservationSelectorTerms:
-    - id: cr-06d509f7af2f8d5da
