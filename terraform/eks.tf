@@ -16,6 +16,7 @@ module "eks" {
   node_iam_role_name            = "${local.name}-eks-node-role"
 
   enable_cluster_creator_admin_permissions = true
+  kms_key_deletion_window_in_days          = 7
 
   addons = {
     metrics-server = {

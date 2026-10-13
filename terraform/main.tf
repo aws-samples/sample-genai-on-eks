@@ -7,11 +7,6 @@
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
-# EKS cluster authentication data source
-data "aws_eks_cluster_auth" "main" {
-  name = module.eks.cluster_name
-}
-
 data "aws_availability_zones" "available" {
   # Do not include local zones
   filter {
@@ -54,7 +49,7 @@ provider "helm" {
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
     exec = {
       api_version = "client.authentication.k8s.io/v1beta1"
-      args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster_auth.main.name]
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
       command     = "aws"
     }
   }
@@ -78,7 +73,7 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
-    args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster_auth.main.name]
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
     command     = "aws"
   }
 }

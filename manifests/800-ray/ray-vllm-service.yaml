@@ -30,9 +30,6 @@ spec:
   rayClusterConfig:
     rayVersion: '2.56.1'
     headGroupSpec:
-      headService:
-        metadata:
-          name: vllm
       rayStartParams: {}
       template:
         spec:
@@ -40,11 +37,10 @@ spec:
           serviceAccountName: model-storage-sa
           containers:
           - name: ray-head
-            image: public.ecr.aws/deep-learning-containers/ray:serve-ml-cuda-v1.3
+            image: rayproject/ray-llm:2.56.1-py312-cu130
             command: ["/bin/bash", "-c"]
             args:
             - |
-              python3 -m pip install -q 'ray[llm]==2.56.1' 'vllm==0.22.0'
               ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265 --num-cpus=1 --num-gpus=0 --metrics-export-port=8080 --block --dashboard-agent-listen-port=52365 --no-monitor
             lifecycle:
               preStop:
@@ -121,12 +117,10 @@ spec:
           serviceAccountName: model-storage-sa
           containers:
           - name: ray-worker
-            image: public.ecr.aws/deep-learning-containers/ray:serve-ml-cuda-v1.3
+            image: rayproject/ray-llm:2.56.1-py312-cu130
             command: ["/bin/bash", "-c"]
             args:
             - |
-              dnf install -y -q gcc gcc-c++ make which
-              python3 -m pip install -q 'ray[llm]==2.56.1' 'vllm==0.22.0'
               ray start --address=${RAY_ADDRESS:-${FQ_RAY_IP}:6379} --metrics-export-port=8080 --block --num-cpus=2 --num-gpus=1 --no-monitor
             lifecycle:
               preStop:
@@ -147,8 +141,6 @@ spec:
                 memory: 20Gi
                 nvidia.com/gpu: 1
             env:
-            - name: CC
-              value: "/usr/bin/gcc"
             - name: VLLM_USE_FLASHINFER_SAMPLER
               value: "0"
             livenessProbe:
