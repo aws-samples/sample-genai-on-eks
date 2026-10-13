@@ -47,7 +47,7 @@ resource "aws_elasticache_serverless_cache" "valkey" {
   engine               = "valkey"
   major_engine_version = "8"
   security_group_ids   = [aws_security_group.valkey[0].id]
-  subnet_ids           = module.vpc.private_subnets
+  subnet_ids           = slice(module.vpc.private_subnets, 0, min(3, length(module.vpc.private_subnets)))
 
   cache_usage_limits {
     data_storage {

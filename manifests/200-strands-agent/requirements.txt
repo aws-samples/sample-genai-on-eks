@@ -1,8 +1,8 @@
 fastapi==0.141.1
-uvicorn==0.52.1
+uvicorn==0.52.3
 pydantic==2.13.4
 requests==2.34.2
-strands-agents[openai]==1.50.2
+strands-agents[openai]==1.52.0
 geopy==2.5.0
 timezonefinder==8.2.5
 pytz==2026.3.post1
